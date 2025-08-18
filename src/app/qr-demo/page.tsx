@@ -147,12 +147,12 @@ export default function QRDemoPage() {
           </CardHeader>
           <CardContent>
             <ol className="list-decimal list-inside space-y-2 text-sm text-gray-600">
-              <li>Click the "Scan QR" button to open the camera scanner</li>
+              <li>Click the &quot;Scan QR&quot; button to open the camera scanner</li>
               <li>Allow camera permissions when prompted</li>
               <li>Select your preferred camera from the dropdown (if multiple cameras available)</li>
               <li>Point your camera at a QR code</li>
               <li>The scanner will automatically detect and decode QR codes</li>
-              <li>Use the "Refresh Cameras" button if you encounter issues</li>
+              <li>Use the &quot;Refresh Cameras&quot; button if you encounter issues</li>
             </ol>
           </CardContent>
         </Card>

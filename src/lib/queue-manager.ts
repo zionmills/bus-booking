@@ -42,7 +42,7 @@ export class QueueManager {
         .eq('user_id', userId)
         .single()
 
-      if (existingEntry) {
+      if (existingEntry && existingEntry.position !== null) {
         return existingEntry.position
       }
 
@@ -92,6 +92,9 @@ export class QueueManager {
       }
 
       const removedPosition = userEntry.position
+      if (removedPosition === null) {
+        return true // Position is null, nothing to reorder
+      }
 
       // Remove the user from queue
       const { error: deleteError } = await supabase
@@ -117,10 +120,12 @@ export class QueueManager {
         
         if (entriesToUpdate && entriesToUpdate.length > 0) {
           for (const entry of entriesToUpdate) {
-            await supabase
-              .from('queue')
-              .update({ position: entry.position - 1 })
-              .eq('id', entry.id)
+            if (entry.position !== null) {
+              await supabase
+                .from('queue')
+                .update({ position: entry.position - 1 })
+                .eq('id', entry.id)
+            }
           }
         }
       }
@@ -148,10 +153,10 @@ export class QueueManager {
 
       if (error) throw error
 
-      return (queueData || []).map((entry: any) => ({
+      return (queueData || []).map((entry: { id: number; delegates?: { name: string | null } | null; position: number | null; joined_at: string }) => ({
         id: entry.id,
         name: entry.delegates?.name || 'Unknown User',
-        position: entry.position,
+        position: entry.position || 0,
         joined_at: entry.joined_at
       }))
     } catch (error) {
@@ -175,7 +180,7 @@ export class QueueManager {
 
       return entry?.position || null
     } catch (error) {
-      if (error.code === 'PGRST116') {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'PGRST116') {
         return null // User not in queue
       }
       console.error('Error getting user queue position:', error)

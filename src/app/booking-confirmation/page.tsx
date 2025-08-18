@@ -100,7 +100,7 @@ export default function BookingConfirmationPage() {
               <CheckCircle className="w-8 h-8 text-green-600" />
             </div>
             <CardTitle className="text-2xl text-green-800">
-              You're Booked on Bus 3!
+              You&apos;re Booked on Bus 3!
             </CardTitle>
           </CardHeader>
           <CardContent className="text-center space-y-6">
@@ -155,7 +155,7 @@ export default function BookingConfirmationPage() {
             </div>
             <div className="flex items-start space-x-3">
               <div className="w-2 h-2 bg-blue-600 rounded-full mt-2 flex-shrink-0"></div>
-              <p>If you need to change your bus, click "Rebook Bus" to join the queue again</p>
+              <p>If you need to change your bus, click &quot;Rebook Bus&quot; to join the queue again</p>
             </div>
             <div className="flex items-start space-x-3">
               <div className="w-2 h-2 bg-blue-600 rounded-full mt-2 flex-shrink-0"></div>

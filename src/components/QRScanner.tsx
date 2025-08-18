@@ -13,9 +13,10 @@ interface CameraDevice {
 
 interface QRScannerProps {
   onScan: (result: string) => void
+  onError?: (error: string) => void
 }
 
-export default function QRScanner({ onScan }: QRScannerProps) {
+export default function QRScanner({ onScan, onError }: QRScannerProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [isScanning, setIsScanning] = useState(false)
   const [cameras, setCameras] = useState<CameraDevice[]>([])
@@ -60,37 +61,49 @@ export default function QRScanner({ onScan }: QRScannerProps) {
       
       if (cameraList.length > 0) {
         setSelectedCamera(cameraList[0].id)
-        startScanner(cameraList[0].id)
+        // Don't call startScanner here to avoid circular dependency
       } else {
         setCameraError('No cameras found on this device.')
       }
-    } catch (error) {
-      console.error('Camera access error:', error)
-      if (error instanceof Error) {
-        if (error.name === 'NotAllowedError') {
-          setPermissionError('Camera access denied. Please allow camera permissions and try again.')
-        } else if (error.name === 'NotFoundError') {
-          setCameraError('No camera found on this device.')
-        } else if (error.name === 'NotReadableError') {
-          setCameraError('Camera is already in use by another application.')
-        } else {
-          setCameraError(`Failed to access camera: ${error.message}`)
+          } catch (error) {
+        console.error('Camera access error:', error)
+        if (error instanceof Error) {
+          if (error.name === 'NotAllowedError') {
+            setPermissionError('Camera access denied. Please allow camera permissions and try again.')
+          } else if (error.name === 'NotFoundError') {
+            setCameraError('No camera found on this device.')
+          } else if (error.name === 'NotReadableError') {
+            setCameraError('Camera is already in use by another application.')
+          } else {
+            setCameraError(`Failed to access camera: ${error.message}`)
+          }
+          // Call onError callback if provided
+          if (onError) {
+            onError(error.message)
+          }
         }
-      }
-    } finally {
+      } finally {
       setIsLoading(false)
     }
+  }, [onError])
+
+  const stopScanner = useCallback(() => {
+    if (html5QrCodeRef.current) {
+      html5QrCodeRef.current.stop().catch(console.error)
+      html5QrCodeRef.current = null
+    }
+    
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop())
+      streamRef.current = null
+    }
+    
+    if (videoRef.current) {
+      videoRef.current.srcObject = null
+    }
+    
+    setIsScanning(false)
   }, [])
-
-  useEffect(() => {
-    if (isOpen) {
-      getAvailableCameras()
-    }
-
-    return () => {
-      stopScanner()
-    }
-  }, [isOpen, getAvailableCameras])
 
   const startScanner = useCallback(async (cameraId?: string) => {
     if (!videoRef.current) return
@@ -144,61 +157,68 @@ export default function QRScanner({ onScan }: QRScannerProps) {
             return
           }
           console.log('QR scanning error:', errorMessage)
+          // Call onError callback if provided
+          if (onError) {
+            onError(errorMessage)
+          }
         }
       )
 
       setIsScanning(true)
       setCameraError('')
-    } catch (error) {
-      console.error('Failed to start scanner:', error)
-      if (error instanceof Error) {
-        if (error.name === 'NotAllowedError') {
-          setPermissionError('Camera access denied. Please check permissions and try again.')
-        } else if (error.name === 'NotFoundError') {
-          setCameraError('Selected camera is not available. Please try a different camera.')
-        } else if (error.name === 'NotReadableError') {
-          setCameraError('Camera is already in use by another application.')
-        } else {
-          setCameraError(`Failed to start camera: ${error.message}`)
+          } catch (error) {
+        console.error('Failed to start scanner:', error)
+        if (error instanceof Error) {
+          if (error.name === 'NotAllowedError') {
+            setPermissionError('Camera access denied. Please check permissions and try again.')
+          } else if (error.name === 'NotFoundError') {
+            setCameraError('Selected camera is not available. Please try a different camera.')
+          } else if (error.name === 'NotReadableError') {
+            setCameraError('Camera is already in use by another application.')
+          } else {
+            setCameraError(`Failed to start camera: ${error.message}`)
+          }
+          // Call onError callback if provided
+          if (onError) {
+            onError(error.message)
+          }
         }
+        stopScanner()
       }
+  }, [onScan, selectedCamera, onError, stopScanner])
+
+  useEffect(() => {
+    if (isOpen) {
+      getAvailableCameras()
+    }
+
+    return () => {
       stopScanner()
     }
-  }, [])
+  }, [isOpen, getAvailableCameras, stopScanner])
 
-  const stopScanner = () => {
-    if (html5QrCodeRef.current) {
-      html5QrCodeRef.current.stop().catch(console.error)
-      html5QrCodeRef.current = null
+  // Start scanner when cameras are loaded and selected
+  useEffect(() => {
+    if (cameras.length > 0 && selectedCamera && isOpen) {
+      startScanner(selectedCamera)
     }
-    
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop())
-      streamRef.current = null
-    }
-    
-    if (videoRef.current) {
-      videoRef.current.srcObject = null
-    }
-    
-    setIsScanning(false)
-  }
+  }, [cameras, selectedCamera, isOpen, startScanner])
 
-  const handleCameraChange = (cameraId: string) => {
+  const handleCameraChange = useCallback((cameraId: string) => {
     setSelectedCamera(cameraId)
     startScanner(cameraId)
-  }
+  }, [startScanner])
 
-  const handleRefreshCameras = () => {
+  const handleRefreshCameras = useCallback(() => {
     getAvailableCameras()
-  }
+  }, [getAvailableCameras])
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     stopScanner()
     setIsOpen(false)
     setPermissionError('')
     setCameraError('')
-  }
+  }, [stopScanner])
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>

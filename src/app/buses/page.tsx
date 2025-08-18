@@ -65,7 +65,7 @@ export default function BusesPage() {
     } catch (error) {
       console.error('Error loading passengers:', error)
     }
-  }, [])
+  }, [buses])
 
   const loadBuses = useCallback(async () => {
     try {

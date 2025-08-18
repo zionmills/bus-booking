@@ -8,7 +8,7 @@ import { Progress } from '@/components/ui/progress'
 import { Users, Clock, ArrowLeft, CheckCircle, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
-import { supabase } from '@/lib/supabase'
+
 import { useUser } from '@/contexts/UserContext'
 import { QueueManager } from '@/lib/queue-manager'
 
@@ -188,7 +188,7 @@ export default function QueuePage() {
                 <Users className="w-5 h-5 mr-2 text-blue-600" />
                 Queue Status
               </CardTitle>
-              <Badge variant={getQueueStatus().color as any}>
+              <Badge variant={getQueueStatus().color as "default" | "secondary" | "destructive" | "outline"}>
                 {getStatusText(getQueueStatus().status)}
               </Badge>
             </div>
@@ -227,7 +227,7 @@ export default function QueuePage() {
                   <CheckCircle className="w-6 h-6 text-green-600" />
                   <div>
                     <p className="font-semibold text-green-800">
-                      You're in the queue!
+                      You&apos;re in the queue!
                     </p>
                     <p className="text-sm text-green-600">
                                              Position: <span className="font-bold">{queuePosition}</span>

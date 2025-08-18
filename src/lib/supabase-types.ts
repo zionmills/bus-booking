@@ -69,7 +69,7 @@ export type Database = {
           {
             foreignKeyName: "bookings_user_id_fkey"
             columns: ["user_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "delegates"
             referencedColumns: ["id"]
           },
@@ -79,19 +79,19 @@ export type Database = {
         Row: {
           capacity: number | null
           created_at: string
-          current_passengers: number | null
+          current_passengers: number
           id: number
         }
         Insert: {
           capacity?: number | null
           created_at?: string
-          current_passengers?: number | null
+          current_passengers?: number
           id?: number
         }
         Update: {
           capacity?: number | null
           created_at?: string
-          current_passengers?: number | null
+          current_passengers?: number
           id?: number
         }
         Relationships: []
@@ -140,7 +140,7 @@ export type Database = {
           {
             foreignKeyName: "queue_user_id_fkey"
             columns: ["user_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "delegates"
             referencedColumns: ["id"]
           },
@@ -151,7 +151,22 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      add_user_to_queue: {
+        Args: { user_id_param: number }
+        Returns: number
+      }
+      decrement_queue_positions: {
+        Args: { start_position: number }
+        Returns: undefined
+      }
+      get_next_queue_position: {
+        Args: Record<PropertyKey, never>
+        Returns: number
+      }
+      remove_user_from_queue: {
+        Args: { user_id_param: number }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never
