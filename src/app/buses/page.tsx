@@ -29,83 +29,253 @@ export default function BusesPage() {
   const [passengersByBus, setPassengersByBus] = useState<Record<number, Passenger[]>>({})
   const [showConfirmButton, setShowConfirmButton] = useState(false)
   const [pendingBusId, setPendingBusId] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loadingPassengers, setLoadingPassengers] = useState<Record<number, boolean>>({})
+  const [pendingPassengers, setPendingPassengers] = useState<Record<number, Passenger[]>>({})
   const { currentUser, queuePosition, setQueuePosition } = useUser()
   const router = useRouter()
 
 
 
-  const loadPassengersForAllBuses = useCallback(async (busesToLoad: BusWithPassengers[] = buses) => {
+  const loadPassengersForBus = useCallback(async (busId: number) => {
+    // Check if passengers are already loaded for this bus
+    if (passengersByBus[busId] && passengersByBus[busId].length > 0) {
+      console.log(`Passengers for bus ${busId} already loaded, skipping...`)
+      return passengersByBus[busId]
+    }
+    
     try {
-      const passengersMap: Record<number, Passenger[]> = {}
+      console.log(`Loading passengers for bus ${busId}...`)
+      setLoadingPassengers(prev => ({ ...prev, [busId]: true }))
       
-      for (const bus of busesToLoad) {
-        const { data: bookings, error } = await supabase
-          .from('bookings')
-          .select(`
-            user_id,
-            delegates!inner(name)
-          `)
-          .eq('bus_id', bus.id)
-        
-        if (error) {
-          console.error(`Error loading passengers for bus ${bus.id}:`, error)
-          passengersMap[bus.id] = []
-          continue
-        }
-        
-        const passengers = bookings.map(booking => ({
-          id: booking.user_id!,
-          name: (booking as { delegates?: { name: string } }).delegates?.name || 'Unknown User'
-        }))
-        
-        passengersMap[bus.id] = passengers
+      const { data: bookings, error } = await supabase
+        .from('bookings')
+        .select(`
+          user_id,
+          delegates!inner(name)
+        `)
+        .eq('bus_id', busId)
+        .not('bus_id', 'is', null)
+      
+      if (error) {
+        console.error(`Error loading passengers for bus ${busId}:`, error)
+        console.error('Error details:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        })
+        return []
       }
       
-      setPassengersByBus(passengersMap)
+      if (!bookings) {
+        console.log(`No bookings found for bus ${busId}`)
+        return []
+      }
+      
+      const passengers = bookings.map(booking => ({
+        id: booking.user_id!,
+        name: (booking as { delegates?: { name: string } }).delegates?.name || 'Unknown User'
+      }))
+      
+      console.log(`Bus ${busId}: ${passengers.length} passengers loaded`)
+      
+      // Update the passengers map for this specific bus
+      setPassengersByBus(prev => ({
+        ...prev,
+        [busId]: passengers
+      }))
+      
+      return passengers
     } catch (error) {
-      console.error('Error loading passengers:', error)
+      console.error(`Unexpected error loading passengers for bus ${busId}:`, error)
+      return []
+    } finally {
+      setLoadingPassengers(prev => ({ ...prev, [busId]: false }))
     }
-  }, [buses])
+  }, [passengersByBus])
+
+  const checkDatabaseHealth = useCallback(async () => {
+    try {
+      // Test database connection and schema first
+      const { data: testData, error: testError } = await supabase
+        .from('buses')
+        .select('id')
+        .limit(1)
+      
+      if (testError) {
+        console.error('Database connection test failed:', testError)
+        throw new Error(`Database connection failed: ${testError.message}`)
+      }
+      
+      // Test bookings table access
+      const { data: bookingsTest, error: bookingsTestError } = await supabase
+        .from('bookings')
+        .select('id')
+        .limit(1)
+      
+      if (bookingsTestError) {
+        console.error('Bookings table access test failed:', bookingsTestError)
+        throw new Error(`Bookings table access failed: ${bookingsTestError.message}`)
+      }
+      
+      console.log('Database connection and schema validation successful')
+      return true
+    } catch (error) {
+      console.error('Database health check failed:', error)
+      return false
+    }
+  }, [])
+
+  const checkBusCapacity = useCallback(async (busId: number) => {
+    try {
+      console.log(`Checking capacity for bus ${busId}...`)
+      
+      const { count: passengerCount, error: countError } = await supabase
+        .from('bookings')
+        .select('id', { count: 'exact', head: true })
+        .eq('bus_id', busId)
+        .not('bus_id', 'is', null)
+      
+      if (countError) {
+        console.error(`Error checking capacity for bus ${busId}:`, countError)
+        throw new Error(`Failed to check bus capacity: ${countError.message}`)
+      }
+      
+      const currentPassengers = passengerCount || 0
+      console.log(`Bus ${busId} currently has ${currentPassengers} passengers`)
+      
+      // Update the bus state with the current passenger count
+      setBuses(prev => prev.map(bus => 
+        bus.id === busId 
+          ? { ...bus, passengerCount: currentPassengers }
+          : bus
+      ))
+      
+      // Also load the passenger details for display
+      if (currentPassengers > 0) {
+        loadPassengersForBus(busId)
+      }
+      
+      return currentPassengers
+    } catch (error) {
+      console.error(`Error checking bus capacity for bus ${busId}:`, error)
+      throw error
+    }
+  }, [])
 
   const loadBuses = useCallback(async () => {
     try {
+      console.log('Starting to load buses...')
+      
+      // Check database health first
+      const isHealthy = await checkDatabaseHealth()
+      if (!isHealthy) {
+        throw new Error('Database is not accessible. Please check your connection.')
+      }
+      
       // First load all buses
       const { data: busesData, error: busesError } = await supabase
         .from('buses')
         .select('*')
         .order('id')
       
-      if (busesError) throw busesError
+      if (busesError) {
+        console.error('Error loading buses:', busesError)
+        throw busesError
+      }
       
-      // Then load passenger counts for each bus
-      const busesWithPassengers = await Promise.all(
-        (busesData || []).map(async (bus) => {
-          const { count: passengerCount, error: countError } = await supabase
-            .from('bookings')
-            .select('*', { count: 'exact', head: true })
-            .eq('bus_id', bus.id)
-          
-          if (countError) {
-            console.error(`Error counting passengers for bus ${bus.id}:`, countError)
-            return { ...bus, passengerCount: 0 }
-          }
-          
-          return { ...bus, passengerCount: passengerCount || 0 }
-        })
-      )
+      if (!busesData || busesData.length === 0) {
+        console.log('No buses found')
+        setBuses([])
+        setLoading(false)
+        return
+      }
       
+      // Validate bus data structure
+      const validBuses = busesData.filter(bus => {
+        if (!bus || typeof bus.id !== 'number') {
+          console.warn('Invalid bus data:', bus)
+          return false
+        }
+        return true
+      })
+      
+      if (validBuses.length === 0) {
+        console.error('No valid buses found after validation')
+        setError('No valid buses found in the database')
+        setLoading(false)
+        return
+      }
+      
+      console.log('Loaded buses:', validBuses)
+      
+      // Initialize buses with 0 passengers initially
+      const busesWithPassengers = validBuses.map(bus => ({ ...bus, passengerCount: 0 }))
+      
+      console.log('Buses initialized:', busesWithPassengers)
       setBuses(busesWithPassengers)
       
-      // Load passenger details for display
-      await loadPassengersForAllBuses(busesWithPassengers)
+      // Load passengers for all buses in parallel
+      console.log('Loading passengers for all buses...')
+      const passengerPromises = validBuses.map(async (bus) => {
+        try {
+          const { data: bookings, error } = await supabase
+            .from('bookings')
+            .select(`
+              user_id,
+              delegates!inner(name)
+            `)
+            .eq('bus_id', bus.id)
+            .not('bus_id', 'is', null)
+          
+          if (error) {
+            console.error(`Error loading passengers for bus ${bus.id}:`, error)
+            return { busId: bus.id, passengers: [], count: 0 }
+          }
+          
+          if (!bookings) {
+            return { busId: bus.id, passengers: [], count: 0 }
+          }
+          
+          const passengers = bookings.map(booking => ({
+            id: booking.user_id!,
+            name: (booking as { delegates?: { name: string } }).delegates?.name || 'Unknown User'
+          }))
+          
+          return { busId: bus.id, passengers, count: passengers.length }
+        } catch (error) {
+          console.error(`Unexpected error loading passengers for bus ${bus.id}:`, error)
+          return { busId: bus.id, passengers: [], count: 0 }
+        }
+      })
+      
+      const passengerResults = await Promise.all(passengerPromises)
+      
+      // Update buses with passenger counts and passengers map
+      setBuses(prev => prev.map(bus => {
+        const result = passengerResults.find(r => r.busId === bus.id)
+        return result ? { ...bus, passengerCount: result.count } : bus
+      }))
+      
+      // Update passengers map
+      const newPassengersByBus: Record<number, Passenger[]> = {}
+      passengerResults.forEach(result => {
+        newPassengersByBus[result.busId] = result.passengers
+      })
+      setPassengersByBus(newPassengersByBus)
+      
+      console.log('All passengers loaded successfully')
       
     } catch (error) {
       console.error('Error loading buses:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load buses'
+      setError(errorMessage)
       toast.error('Failed to load buses')
     } finally {
       setLoading(false)
     }
-  }, [loadPassengersForAllBuses])
+  }, [])
 
   const loadUserBooking = useCallback(async () => {
     if (!currentUser) return
@@ -139,36 +309,54 @@ export default function BusesPage() {
       return
     }
 
+    // Check if user is in queue and in top 20
+    if (queuePosition === null) {
+      toast.error('You must join the queue first before booking a bus')
+      return
+    }
+    
+    if (queuePosition > 20) {
+      toast.error(`You must be in the top 20 of the queue to book a bus. Your current position is ${queuePosition}.`)
+      return
+    }
+
     try {
       console.log('Starting booking process for bus:', busId)
       console.log('Current user:', currentUser)
       console.log('Available buses:', buses)
+      console.log('Queue position:', queuePosition)
       
-      // Check if user can book (must be in top 20 of queue)
-      if (queuePosition !== null) {
-        const canBook = await QueueManager.canUserBook(currentUser.id)
-        if (!canBook) {
-          toast.error(`You must be in the top 20 of the queue to book a bus. Your current position is ${queuePosition}.`)
+      // Additional check using QueueManager for extra validation
+      const canBook = await QueueManager.canUserBook(currentUser.id)
+      if (!canBook) {
+        toast.error(`You must be in the top 20 of the queue to book a bus. Your current position is ${queuePosition}.`)
+        return
+      }
+      
+      // Check if bus has capacity by getting the current passenger count
+      try {
+        const currentPassengers = await checkBusCapacity(busId)
+        
+        const selectedBus = buses.find(bus => bus.id === busId)
+        if (!selectedBus) {
+          toast.error('Bus not found')
           return
         }
-      }
-      
-      // Check if bus has capacity
-      const selectedBus = buses.find(bus => bus.id === busId)
-      if (!selectedBus) {
-        toast.error('Bus not found')
-        return
-      }
-      
-      console.log('Selected bus:', selectedBus)
-      
-      if (selectedBus.capacity === null) {
-        toast.error('Bus capacity information is unavailable')
-        return
-      }
-      
-      if (selectedBus.passengerCount >= selectedBus.capacity) {
-        toast.error('Bus is full. Please select another bus.')
+        
+        console.log('Selected bus:', selectedBus)
+        
+        if (selectedBus.capacity === null) {
+          toast.error('Bus capacity information is unavailable')
+          return
+        }
+        
+        if (currentPassengers >= selectedBus.capacity) {
+          toast.error('Bus is full. Please select another bus.')
+          return
+        }
+      } catch (error) {
+        console.error('Error checking bus capacity:', error)
+        toast.error('Unable to verify bus capacity. Please try again.')
         return
       }
       
@@ -180,6 +368,21 @@ export default function BusesPage() {
         // Check if the new bus is the same as current booking
         if (userBooking.busId === busId) {
           toast.error('You are already booked on this bus')
+          return
+        }
+        
+        // Check capacity for the new bus before changing
+        try {
+          const currentPassengers = await checkBusCapacity(busId)
+          const selectedBus = buses.find(bus => bus.id === busId)
+          
+          if (selectedBus && selectedBus.capacity !== null && currentPassengers >= selectedBus.capacity) {
+            toast.error('The new bus is full. Please select another bus.')
+            return
+          }
+        } catch (error) {
+          console.error('Error checking new bus capacity:', error)
+          toast.error('Unable to verify new bus capacity. Please try again.')
           return
         }
         
@@ -203,19 +406,56 @@ export default function BusesPage() {
           return bus
         }))
         
-        setUserBooking({ busId, userName: currentUser.name || 'Unknown User' })
-        
-        // Refresh passengers for both buses
-        await loadPassengersForAllBuses()
-        
-        toast.success('Successfully changed bus!')
-        return
+                 setUserBooking({ busId, userName: currentUser.name || 'Unknown User' })
+         
+         // Clear any pending passengers
+         setPendingPassengers(prev => {
+           const newState = { ...prev }
+           delete newState[userBooking.busId]
+           delete newState[busId]
+           return newState
+         })
+         
+         // Refresh passengers for both buses
+         await Promise.all([
+           loadPassengersForBus(userBooking.busId),
+           loadPassengersForBus(busId)
+         ])
+         
+         toast.success('Successfully changed bus!')
+         return
       }
       
-      // Show confirm button instead of immediately booking
-      setPendingBusId(busId)
-      setShowConfirmButton(true)
-      toast.info('Please confirm your bus selection')
+             // Create pending passenger object
+       const pendingPassenger: Passenger = {
+         id: currentUser.id,
+         name: currentUser.name || 'Unknown User'
+       }
+       
+       // Remove user from any previously selected bus's pending passengers
+       setPendingPassengers(prev => {
+         const newState = { ...prev }
+         // Remove from all buses except the current selection
+         Object.keys(newState).forEach(busKey => {
+           const busIdNum = parseInt(busKey)
+           if (busIdNum !== busId) {
+             newState[busIdNum] = newState[busIdNum]?.filter(p => p.id !== currentUser.id) || []
+             // Remove the bus entry entirely if no pending passengers left
+             if (newState[busIdNum]?.length === 0) {
+               delete newState[busIdNum]
+             }
+           }
+         })
+         
+         // Add user to pending passengers for the newly selected bus
+         newState[busId] = [pendingPassenger]
+         return newState
+       })
+       
+       // Show confirm button instead of immediately booking
+       setPendingBusId(busId)
+       setShowConfirmButton(true)
+       toast.info('Please confirm your bus selection')
       
     } catch (error) {
       console.error('Error in bus selection:', error)
@@ -267,11 +507,16 @@ export default function BusesPage() {
       }
       
       // Refresh passengers for the updated bus
-      await loadPassengersForAllBuses()
+      await loadPassengersForBus(pendingBusId)
       
-      // Reset confirm button state
-      setShowConfirmButton(false)
-      setPendingBusId(null)
+             // Reset confirm button state and clear pending passengers
+       setShowConfirmButton(false)
+       setPendingBusId(null)
+       setPendingPassengers(prev => {
+         const newState = { ...prev }
+         delete newState[pendingBusId]
+         return newState
+       })
       
       toast.success('Booking confirmed!')
       
@@ -306,10 +551,17 @@ export default function BusesPage() {
           : bus
       ))
       
-      setUserBooking(null)
-      
-      // Refresh passengers for the updated bus
-      await loadPassengersForAllBuses()
+             setUserBooking(null)
+       
+       // Clear any pending passengers
+       setPendingPassengers(prev => {
+         const newState = { ...prev }
+         delete newState[userBooking.busId]
+         return newState
+       })
+       
+       // Refresh passengers for the updated bus
+       await loadPassengersForBus(userBooking.busId)
       
       toast.success('Booking cancelled successfully!')
       
@@ -319,12 +571,17 @@ export default function BusesPage() {
     }
   }
 
-  const getBusStatus = (bus: BusWithPassengers) => {
+  const getBusStatus = (bus: BusWithPassengers, isLoadingPassengers: boolean, pendingCount: number = 0) => {
+    if (isLoadingPassengers) {
+      return { status: 'loading', color: 'secondary' }
+    }
+    
     if (bus.capacity === null) {
       return { status: 'unknown', color: 'secondary' }
     }
     
-    const percentage = (bus.passengerCount / bus.capacity) * 100
+    const totalPassengers = bus.passengerCount + pendingCount
+    const percentage = (totalPassengers / bus.capacity) * 100
     
     if (percentage >= 100) return { status: 'full', color: 'destructive' }
     if (percentage >= 80) return { status: 'almost-full', color: 'warning' }
@@ -339,7 +596,20 @@ export default function BusesPage() {
       case 'moderate': return 'Moderate'
       case 'available': return 'Available'
       case 'unknown': return 'Unknown'
+      case 'loading': return 'Loading...'
       default: return 'Unknown'
+    }
+  }
+
+  const clearPendingSelection = () => {
+    if (pendingBusId) {
+      setPendingPassengers(prev => {
+        const newState = { ...prev }
+        delete newState[pendingBusId]
+        return newState
+      })
+      setShowConfirmButton(false)
+      setPendingBusId(null)
     }
   }
 
@@ -353,6 +623,15 @@ export default function BusesPage() {
       loadUserBooking()
     }
   }, [currentUser, loadUserBooking])
+
+  // Cleanup pending passengers when component unmounts
+  useEffect(() => {
+    return () => {
+      setPendingPassengers({})
+      setShowConfirmButton(false)
+      setPendingBusId(null)
+    }
+  }, [])
 
   if (loading) {
     return (
@@ -395,7 +674,14 @@ export default function BusesPage() {
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Select Your Bus</h1>
-            <p className="text-gray-600 mt-2">Choose from 26 available buses</p>
+            <p className="text-gray-600 mt-2">
+              {queuePosition === null 
+                ? 'Join the queue first to book a bus'
+                : queuePosition <= 20 
+                  ? `You can book a bus (Queue position: ${queuePosition})`
+                  : `Waiting in queue (Position: ${queuePosition}, need 1-20 to book)`
+              }
+            </p>
           </div>
           <Link href="/">
             <Button variant="outline" size="sm">
@@ -405,8 +691,111 @@ export default function BusesPage() {
           </Link>
         </div>
 
+        {/* Error Display */}
+        {error && (
+          <Card className="mb-8 border-red-200 bg-red-50">
+            <CardContent className="pt-6">
+              <div className="flex items-center space-x-3">
+                <XCircle className="w-6 h-6 text-red-600" />
+                <div>
+                  <p className="font-semibold text-red-800">Error Loading Buses</p>
+                  <p className="text-sm text-red-600">{error}</p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setError(null)
+                    loadBuses()
+                  }}
+                >
+                  Retry
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+
+
+
+
+        {/* Booking Eligibility Summary */}
+        <Card className="mb-6 border-2 border-gray-200 bg-gray-50">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                  queuePosition === null 
+                    ? 'bg-blue-100 text-blue-600' 
+                    : queuePosition <= 20 
+                      ? 'bg-green-100 text-green-600' 
+                      : 'bg-orange-100 text-orange-600'
+                }`}>
+                  {queuePosition === null ? (
+                    <span className="text-sm font-bold">?</span>
+                  ) : queuePosition <= 20 ? (
+                    <CheckCircle className="w-5 h-5" />
+                  ) : (
+                    <span className="text-xs font-bold">{queuePosition}</span>
+                  )}
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-800">
+                    {queuePosition === null 
+                      ? 'Not in Queue'
+                      : queuePosition <= 20 
+                        ? 'Eligible to Book'
+                        : 'Not Eligible to Book'
+                    }
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    {queuePosition === null 
+                      ? 'Join the queue to start booking buses'
+                      : queuePosition <= 20 
+                        ? `You are in position ${queuePosition} and can book a bus`
+                        : `You are in position ${queuePosition} and need to be in the top 20 to book`
+                    }
+                  </p>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-2xl font-bold text-gray-800">
+                  {queuePosition === null ? 'N/A' : queuePosition}
+                </div>
+                <div className="text-xs text-gray-500">Queue Position</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Queue Status Banner */}
-        {queuePosition !== null && (
+        {queuePosition === null ? (
+          <Card className="mb-8 border-2 border-blue-200 bg-blue-50">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center bg-blue-100 text-blue-600">
+                    <span className="text-xs font-bold">!</span>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-blue-800">
+                      Join the Queue First
+                    </p>
+                    <p className="text-sm text-blue-600">
+                      You need to join the queue before you can book a bus
+                    </p>
+                  </div>
+                </div>
+                <Link href="/queue">
+                  <Button size="sm">
+                    Join Queue
+                  </Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
           <Card className={`mb-8 border-2 ${
             queuePosition <= 20 
               ? 'border-green-200 bg-green-50' 
@@ -440,16 +829,23 @@ export default function BusesPage() {
                     }`}>
                       {queuePosition <= 20 
                         ? 'You are in the top 20 and can select a bus'
-                        : `You need to be in position 1-20 to book a bus`
+                        : `You need to be in position 1-20 to book a bus. Current position: ${queuePosition}`
                       }
                     </p>
                   </div>
                 </div>
-                <Link href="/queue">
-                  <Button variant="outline" size="sm">
-                    View Queue
-                  </Button>
-                </Link>
+                <div className="flex space-x-2">
+                  <Link href="/queue">
+                    <Button variant="outline" size="sm">
+                      View Queue
+                    </Button>
+                  </Link>
+                  {queuePosition > 20 && (
+                    <div className="text-xs text-orange-600 bg-orange-100 px-2 py-1 rounded">
+                      {queuePosition - 20} positions to go
+                    </div>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -484,62 +880,47 @@ export default function BusesPage() {
           </Card>
         )}
 
-        {/* Confirm Booking Button */}
-        {showConfirmButton && pendingBusId && (
-          <Card className="mb-8 border-blue-200 bg-blue-50">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center">
-                    <Bus className="w-4 h-4 text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-blue-800">
-                      Confirm your booking on Bus {pendingBusId}
-                    </p>
-                    <p className="text-sm text-blue-600">
-                      Click confirm to book your seat and remove yourself from the queue
-                    </p>
-                  </div>
-                </div>
-                <div className="flex space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setShowConfirmButton(false)
-                      setPendingBusId(null)
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={handleConfirmBooking}
-                  >
-                    <CheckCircle className="w-4 h-4 mr-2" />
-                    Confirm
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+
 
         {/* Buses Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {/* Legend */}
+          <div className="col-span-full mb-4">
+                          <div className="flex items-center justify-center space-x-6 text-sm">
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                  <span className="text-gray-600">Bookable (Top 20 in queue)</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 bg-gray-400 rounded-full"></div>
+                  <span className="text-gray-600">Not bookable (Queue position &gt; 20)</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                  <span className="text-gray-600">Your booked bus</span>
+                </div>
+              </div>
+          </div>
           {buses.map((bus) => {
-            const { status, color } = getBusStatus(bus)
+            const pendingCount = pendingPassengers[bus.id]?.length || 0
+            const { status, color } = getBusStatus(bus, false, pendingCount)
             const isBooked = userBooking?.busId === bus.id
-            const isFull = bus.capacity ? bus.passengerCount >= bus.capacity : false
+            const isFull = bus.capacity ? (bus.passengerCount + pendingCount) >= bus.capacity : false
             const passengers = passengersByBus[bus.id] || []
             
             return (
               <Card 
                 key={bus.id} 
-                className={`transition-all duration-200 hover:shadow-lg ${
-                  isBooked ? 'ring-2 ring-green-500 bg-green-50' : ''
+                className={`transition-all duration-200 hover:shadow-lg cursor-pointer ${
+                  isBooked ? 'ring-2 ring-green-500 bg-green-50' : 
+                  (queuePosition === null || queuePosition > 20) ? 'ring-2 ring-gray-300 bg-gray-50' : ''
                 }`}
+                onClick={() => {
+                  // Load passengers when card is clicked (only if not already loaded)
+                  if (!passengersByBus[bus.id] || passengersByBus[bus.id].length === 0) {
+                    loadPassengersForBus(bus.id)
+                  }
+                }}
               >
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
@@ -558,11 +939,18 @@ export default function BusesPage() {
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600">Capacity</span>
                       <span className="font-medium">
-                        {bus.passengerCount}/{bus.capacity ?? 0}
+                        <span>
+                          {bus.passengerCount + (pendingPassengers[bus.id]?.length || 0)}/{bus.capacity ?? 0}
+                          {pendingPassengers[bus.id]?.length > 0 && (
+                            <span className="text-blue-600 text-xs ml-1">
+                              (+{pendingPassengers[bus.id].length})
+                            </span>
+                          )}
+                        </span>
                       </span>
                     </div>
                     <Progress 
-                      value={bus.capacity ? (bus.passengerCount / bus.capacity) * 100 : 0} 
+                      value={bus.capacity ? ((bus.passengerCount + (pendingPassengers[bus.id]?.length || 0)) / bus.capacity) * 100 : 0} 
                       className="h-2"
                     />
                   </div>
@@ -570,23 +958,42 @@ export default function BusesPage() {
                   {/* Passenger Count */}
                   <div className="flex items-center text-sm text-gray-600">
                     <Users className="w-4 h-4 mr-2" />
-                    {bus.passengerCount} passengers
+                    <span>
+                      {bus.passengerCount + (pendingPassengers[bus.id]?.length || 0)} passengers
+                      {pendingPassengers[bus.id]?.length > 0 && (
+                        <span className="text-blue-600 text-xs ml-1">
+                          (+{pendingPassengers[bus.id].length} pending)
+                        </span>
+                      )}
+                    </span>
                   </div>
 
                   {/* Passenger Names List */}
-                  {passengers.length > 0 && (
-                    <div className="space-y-2">
-                      <div className="text-sm font-medium text-gray-700">Passengers:</div>
-                      <div className="max-h-24 overflow-y-auto border rounded-md p-2 bg-gray-50">
-                        {passengers.map((passenger) => (
-                          <div key={passenger.id} className="flex items-center space-x-2 py-1">
-                            <User className="w-3 h-3 text-gray-500" />
-                            <span className="text-sm text-gray-600">{passenger.name}</span>
-                          </div>
-                        ))}
-                      </div>
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium text-gray-700">Passengers:</div>
+                    <div className="max-h-24 overflow-y-auto border rounded-md p-2 bg-gray-50">
+                      {/* Show actual passengers */}
+                      {passengers.map((passenger) => (
+                        <div key={passenger.id} className="flex items-center space-x-2 py-1">
+                          <User className="w-3 h-3 text-gray-500" />
+                          <span className="text-sm text-gray-600">{passenger.name}</span>
+                        </div>
+                      ))}
+                      {/* Show pending passengers */}
+                      {pendingPassengers[bus.id]?.map((passenger) => (
+                        <div key={`pending-${passenger.id}`} className="flex items-center space-x-2 py-1">
+                          <User className="w-3 h-3 text-blue-500" />
+                          <span className="text-sm text-blue-600 italic">{passenger.name} (pending)</span>
+                        </div>
+                      ))}
+                      {/* Show "no passengers" message if both lists are empty */}
+                      {passengers.length === 0 && (!pendingPassengers[bus.id] || pendingPassengers[bus.id].length === 0) && (
+                        <div className="flex items-center justify-center py-2">
+                          <span className="text-sm text-gray-500">No passengers yet</span>
+                        </div>
+                      )}
                     </div>
-                  )}
+                  </div>
 
                   {/* Action Button */}
                   {isBooked ? (
@@ -594,15 +1001,50 @@ export default function BusesPage() {
                       <CheckCircle className="w-4 h-4 mr-2" />
                       Booked
                     </Button>
+                  ) : pendingBusId === bus.id && showConfirmButton ? (
+                    <div className="space-y-2">
+                      <Button 
+                        className="w-full" 
+                        onClick={handleConfirmBooking}
+                      >
+                        <CheckCircle className="w-4 h-4 mr-2" />
+                        Confirm Booking
+                      </Button>
+                      <Button 
+                        className="w-full" 
+                        variant="outline"
+                        onClick={clearPendingSelection}
+                      >
+                        Cancel Selection
+                      </Button>
+                    </div>
                   ) : (
-                    <Button 
-                      className="w-full" 
-                      disabled={isFull || (queuePosition !== null && queuePosition > 20)}
-                      onClick={() => handleBookBus(bus.id)}
-                    >
-                      {isFull ? 'Full' : 
-                       (queuePosition !== null && queuePosition > 20) ? 'Wait Your Turn' : 'Select This Bus'}
-                    </Button>
+                    <div className="space-y-2">
+                      <Button 
+                        className="w-full" 
+                        disabled={isFull || queuePosition === null || queuePosition > 20}
+                        onClick={() => {
+                          // Double-check that user can book before proceeding
+                          if (queuePosition === null || queuePosition > 20) {
+                            toast.error('You must be in the top 20 of the queue to book a bus')
+                            return
+                          }
+                          handleBookBus(bus.id)
+                        }}
+                      >
+                        {isFull ? 'Full' : 
+                         queuePosition === null ? 'Join Queue First' :
+                         queuePosition > 20 ? `Position ${queuePosition} - Wait Your Turn` : 'Select This Bus'}
+                      </Button>
+                      {/* Show reason why button is disabled */}
+                      {(queuePosition === null || queuePosition > 20) && (
+                        <div className="text-xs text-center text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                          {queuePosition === null 
+                            ? 'Join queue to book buses' 
+                            : `Need position 1-20, currently ${queuePosition}`}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </CardContent>
               </Card>

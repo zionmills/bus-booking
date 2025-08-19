@@ -26,10 +26,7 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
   const [cameraError, setCameraError] = useState<string>('')
   
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null)
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const streamRef = useRef<MediaStream | null>(null)
-
-
+  const scannerContainerRef = useRef<HTMLDivElement>(null)
 
   const getAvailableCameras = useCallback(async () => {
     try {
@@ -61,78 +58,56 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
       
       if (cameraList.length > 0) {
         setSelectedCamera(cameraList[0].id)
-        // Don't call startScanner here to avoid circular dependency
       } else {
         setCameraError('No cameras found on this device.')
       }
-          } catch (error) {
-        console.error('Camera access error:', error)
-        if (error instanceof Error) {
-          if (error.name === 'NotAllowedError') {
-            setPermissionError('Camera access denied. Please allow camera permissions and try again.')
-          } else if (error.name === 'NotFoundError') {
-            setCameraError('No camera found on this device.')
-          } else if (error.name === 'NotReadableError') {
-            setCameraError('Camera is already in use by another application.')
-          } else {
-            setCameraError(`Failed to access camera: ${error.message}`)
-          }
-          // Call onError callback if provided
-          if (onError) {
-            onError(error.message)
-          }
+    } catch (error) {
+      console.error('Camera access error:', error)
+      if (error instanceof Error) {
+        if (error.name === 'NotAllowedError') {
+          setPermissionError('Camera access denied. Please allow camera permissions and try again.')
+        } else if (error.name === 'NotFoundError') {
+          setCameraError('No camera found on this device.')
+        } else if (error.name === 'NotReadableError') {
+          setCameraError('Camera is already in use by another application.')
+        } else {
+          setCameraError(`Failed to access camera: ${error.message}`)
         }
-      } finally {
+        // Call onError callback if provided
+        if (onError) {
+          onError(error.message)
+        }
+      }
+    } finally {
       setIsLoading(false)
     }
   }, [onError])
 
   const stopScanner = useCallback(() => {
     if (html5QrCodeRef.current) {
-      html5QrCodeRef.current.stop().catch(console.error)
-      html5QrCodeRef.current = null
+      try {
+        // Check if the scanner is actually running before trying to stop it
+        if (html5QrCodeRef.current.isScanning) {
+          html5QrCodeRef.current.stop().catch(console.error)
+        }
+        html5QrCodeRef.current = null
+      } catch (error) {
+        console.warn('Error stopping scanner:', error)
+        html5QrCodeRef.current = null
+      }
     }
-    
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop())
-      streamRef.current = null
-    }
-    
-    if (videoRef.current) {
-      videoRef.current.srcObject = null
-    }
-    
     setIsScanning(false)
   }, [])
 
   const startScanner = useCallback(async (cameraId?: string) => {
-    if (!videoRef.current) return
+    if (!scannerContainerRef.current) return
 
     try {
-      stopScanner() // Stop any existing scanner
+      // Ensure clean stop of previous scanner
+      stopScanner()
       
       const targetCameraId = cameraId || selectedCamera
       if (!targetCameraId) return
-
-      // Create camera constraints
-      const constraints = {
-        video: {
-          deviceId: { exact: targetCameraId },
-          width: { ideal: 1280, min: 640 },
-          height: { ideal: 720, min: 480 },
-          facingMode: 'environment' // Prefer back camera if available
-        }
-      }
-
-      // Get the camera stream
-      const stream = await navigator.mediaDevices.getUserMedia(constraints)
-      streamRef.current = stream
-      
-      // Set the video source
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        videoRef.current.play()
-      }
 
       // Initialize HTML5 QR Code scanner
       html5QrCodeRef.current = new Html5Qrcode("qr-reader")
@@ -166,25 +141,25 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
 
       setIsScanning(true)
       setCameraError('')
-          } catch (error) {
-        console.error('Failed to start scanner:', error)
-        if (error instanceof Error) {
-          if (error.name === 'NotAllowedError') {
-            setPermissionError('Camera access denied. Please check permissions and try again.')
-          } else if (error.name === 'NotFoundError') {
-            setCameraError('Selected camera is not available. Please try a different camera.')
-          } else if (error.name === 'NotReadableError') {
-            setCameraError('Camera is already in use by another application.')
-          } else {
-            setCameraError(`Failed to start camera: ${error.message}`)
-          }
-          // Call onError callback if provided
-          if (onError) {
-            onError(error.message)
-          }
+    } catch (error) {
+      console.error('Failed to start scanner:', error)
+      if (error instanceof Error) {
+        if (error.name === 'NotAllowedError') {
+          setPermissionError('Camera access denied. Please check permissions and try again.')
+        } else if (error.name === 'NotFoundError') {
+          setCameraError('Selected camera is not available. Please try a different camera.')
+        } else if (error.name === 'NotReadableError') {
+          setCameraError('Camera is already in use by another application.')
+        } else {
+          setCameraError(`Failed to start camera: ${error.message}`)
         }
-        stopScanner()
+        // Call onError callback if provided
+        if (onError) {
+          onError(error.message)
+        }
       }
+      stopScanner()
+    }
   }, [onScan, selectedCamera, onError, stopScanner])
 
   useEffect(() => {
@@ -205,13 +180,43 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
   }, [cameras, selectedCamera, isOpen, startScanner])
 
   const handleCameraChange = useCallback((cameraId: string) => {
+    if (cameraId === selectedCamera) return // Don't switch if same camera
+    
     setSelectedCamera(cameraId)
-    startScanner(cameraId)
-  }, [startScanner])
+    
+    // Stop current scanner and start with new camera
+    if (html5QrCodeRef.current) {
+      try {
+        if (html5QrCodeRef.current.isScanning) {
+          html5QrCodeRef.current.stop().catch(console.error)
+        }
+        html5QrCodeRef.current = null
+      } catch (error) {
+        console.warn('Error stopping scanner during camera switch:', error)
+        html5QrCodeRef.current = null
+      }
+    }
+    
+    // Small delay to ensure cleanup, then start new scanner
+    setTimeout(() => {
+      startScanner(cameraId)
+    }, 150)
+  }, [selectedCamera, startScanner])
 
-  const handleRefreshCameras = useCallback(() => {
+  const handleRefreshCameras = useCallback(async () => {
+    // Stop scanner first to clean up properly
+    stopScanner()
+    
+    // Small delay to ensure cleanup is complete
+    await new Promise(resolve => setTimeout(resolve, 100))
+    
+    // Clear any existing errors
+    setPermissionError('')
+    setCameraError('')
+    
+    // Refresh cameras
     getAvailableCameras()
-  }, [getAvailableCameras])
+  }, [stopScanner, getAvailableCameras])
 
   const handleClose = useCallback(() => {
     stopScanner()
@@ -228,7 +233,7 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
           Scan QR
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center">
             <QrCode className="w-5 h-5 mr-2" />
@@ -236,7 +241,7 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
           </DialogTitle>
         </DialogHeader>
         
-        <div className="space-y-4">
+        <div className="space-y-4 max-h-[calc(90vh-120px)] overflow-y-auto">
           {isLoading && (
             <div className="text-center py-4">
               <RefreshCw className="w-6 h-6 mx-auto animate-spin text-blue-500" />
@@ -295,8 +300,9 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
               <select
                 value={selectedCamera}
                 onChange={(e) => handleCameraChange(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-md text-sm"
-                disabled={isScanning}
+                className="w-full p-2 border border-gray-300 rounded-md text-sm relative z-10"
+                disabled={isLoading}
+                style={{ position: 'relative', zIndex: 1000 }}
               >
                 {cameras.map((camera) => (
                   <option key={camera.id} value={camera.id}>
@@ -313,17 +319,12 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
             </div>
           )}
           
-          <div className="relative">
-            <video
-              ref={videoRef}
-              className="w-full h-64 bg-gray-100 rounded-lg object-cover"
-              autoPlay
-              playsInline
-              muted
-            />
+          <div className="relative w-full">
             <div 
+              ref={scannerContainerRef}
               id="qr-reader" 
-              className="absolute inset-0"
+              className="w-full min-h-[300px] max-h-[60vh] bg-gray-100 rounded-lg overflow-hidden"
+              style={{ position: 'relative', zIndex: 1 }}
             />
           </div>
           
