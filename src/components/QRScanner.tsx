@@ -24,6 +24,7 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [permissionError, setPermissionError] = useState<string>('')
   const [cameraError, setCameraError] = useState<string>('')
+  const [hasScanned, setHasScanned] = useState(false)
   
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null)
   const scannerContainerRef = useRef<HTMLDivElement>(null)
@@ -97,6 +98,7 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
       }
     }
     setIsScanning(false)
+    setHasScanned(false)
   }, [])
 
   const startScanner = useCallback(async (cameraId?: string) => {
@@ -121,10 +123,18 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
           aspectRatio: 1.0,
         },
         (decodedText) => {
-          // Success callback
+          // Success callback - prevent multiple scans
+          if (hasScanned) return
+          
+          setHasScanned(true)
           onScan(decodedText)
-          setIsOpen(false)
-          stopScanner()
+          
+          // Immediately stop scanning and close dialog
+          // Use setTimeout to ensure scanner is fully stopped before closing
+          setTimeout(() => {
+            stopScanner()
+            setIsOpen(false)
+          }, 100)
         },
         (errorMessage) => {
           // Error callback - ignore common scanning errors
@@ -160,10 +170,11 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
       }
       stopScanner()
     }
-  }, [onScan, selectedCamera, onError, stopScanner])
+  }, [onScan, selectedCamera, onError, stopScanner, hasScanned])
 
   useEffect(() => {
     if (isOpen) {
+      setHasScanned(false)
       getAvailableCameras()
     }
 
@@ -183,6 +194,7 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
     if (cameraId === selectedCamera) return // Don't switch if same camera
     
     setSelectedCamera(cameraId)
+    setHasScanned(false)
     
     // Stop current scanner and start with new camera
     if (html5QrCodeRef.current) {
@@ -210,9 +222,10 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
     // Small delay to ensure cleanup is complete
     await new Promise(resolve => setTimeout(resolve, 100))
     
-    // Clear any existing errors
+    // Clear any existing errors and reset scan state
     setPermissionError('')
     setCameraError('')
+    setHasScanned(false)
     
     // Refresh cameras
     getAvailableCameras()
@@ -223,6 +236,7 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
     setIsOpen(false)
     setPermissionError('')
     setCameraError('')
+    setHasScanned(false)
   }, [stopScanner])
 
   return (
