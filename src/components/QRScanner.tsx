@@ -25,9 +25,16 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
   const [permissionError, setPermissionError] = useState<string>('')
   const [cameraError, setCameraError] = useState<string>('')
   const [hasScanned, setHasScanned] = useState(false)
+  const [lastScanTime, setLastScanTime] = useState<number>(0) // Mobile scan debouncing
   
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null)
   const scannerContainerRef = useRef<HTMLDivElement>(null)
+
+  // Mobile detection utility
+  const isMobile = () => {
+    if (typeof window === 'undefined') return false
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+  }
 
   const getAvailableCameras = useCallback(async () => {
     try {
@@ -126,7 +133,15 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
           // Success callback - prevent multiple scans
           if (hasScanned) return
           
+          // Mobile-specific protection: prevent rapid successive scans
+          const now = Date.now()
+          if (isMobile() && now - lastScanTime < 1500) {
+            console.log('Mobile scan debouncing: ignoring rapid scan')
+            return
+          }
+          
           setHasScanned(true)
+          setLastScanTime(now)
           onScan(decodedText)
           
           // Immediately stop scanning and close dialog
@@ -175,10 +190,12 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
   useEffect(() => {
     if (isOpen) {
       setHasScanned(false)
+      setLastScanTime(0) // Reset mobile scan debouncing
       getAvailableCameras()
     } else {
       // Reset scanning state when dialog closes
       setHasScanned(false)
+      setLastScanTime(0) // Reset mobile scan debouncing
       stopScanner()
     }
 
@@ -251,6 +268,7 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
     setCameraError('')
     setHasScanned(false)
     setIsLoading(false)
+    setLastScanTime(0) // Reset mobile scan debouncing
     // Reset camera state to prevent issues on next open
     setCameras([])
     setSelectedCamera('')

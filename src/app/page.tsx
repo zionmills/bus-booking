@@ -22,22 +22,34 @@ export default function HomePage() {
   const [consentGiven, setConsentGiven] = useState(false)
   const [isProcessingQR, setIsProcessingQR] = useState(false) // Add flag to prevent multiple QR processing
   const [processedQRs, setProcessedQRs] = useState<Set<string>>(new Set()) // Track processed QR codes
+  const [lastProcessedTime, setLastProcessedTime] = useState<number>(0) // Track last processing time for mobile debouncing
   const { currentUser, setCurrentUser, queuePosition, setQueuePosition } = useUser()
 
   // Reset processing state when step changes
   useEffect(() => {
     if (step !== 'qr') {
       setIsProcessingQR(false)
+      // Reset mobile debouncing when moving to next step
+      setLastProcessedTime(0)
     } else {
       // Reset processed QR codes when back to scanning step
       setProcessedQRs(new Set())
+      setLastProcessedTime(0)
     }
   }, [step])
 
   const handleQRScan = async (scannedQR: string) => {
+    const now = Date.now()
+    
     // Prevent multiple simultaneous QR processing
     if (isProcessingQR || isLoading) {
       console.log('QR processing already in progress, ignoring new scan')
+      return
+    }
+    
+    // Mobile-specific debouncing: prevent rapid successive scans (less than 2 seconds apart)
+    if (now - lastProcessedTime < 2000) {
+      console.log('Mobile debouncing: ignoring rapid successive scan')
       return
     }
     
@@ -56,6 +68,7 @@ export default function HomePage() {
     setIsProcessingQR(true)
     setQrCode(scannedQR)
     setIsLoading(true)
+    setLastProcessedTime(now)
     
     try {
       // Check if delegate exists with this QR code
@@ -187,8 +200,24 @@ export default function HomePage() {
     }
   }
 
+  // Mobile detection utility
+  const isMobile = () => {
+    if (typeof window === 'undefined') return false
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+  }
+
   const handleManualQRSubmit = () => {
     if (!qrCode.trim() || isLoading || isProcessingQR || processedQRs.has(qrCode.trim())) return
+    
+    // Additional mobile protection for manual submission
+    if (isMobile()) {
+      const now = Date.now()
+      if (now - lastProcessedTime < 2000) {
+        console.log('Mobile debouncing: ignoring rapid manual submission')
+        return
+      }
+    }
+    
     handleQRScan(qrCode.trim())
   }
 
@@ -251,7 +280,7 @@ export default function HomePage() {
                   onClick={handleManualQRSubmit}
                   className="w-full" 
                   size="lg"
-                  disabled={!qrCode.trim() || isLoading || isProcessingQR}
+                  disabled={!qrCode.trim() || isLoading || isProcessingQR || processedQRs.has(qrCode.trim())}
                 >
                   {isLoading ? 'Processing...' : 'Continue'}
                 </Button>
