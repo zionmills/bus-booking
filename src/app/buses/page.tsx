@@ -5,13 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { Bus, Users, ArrowLeft, CheckCircle, XCircle, User } from 'lucide-react'
+import { Bus, Users, ArrowLeft, CheckCircle, XCircle, User, Timer } from 'lucide-react'
 import { toast } from 'sonner'
 import { supabase, type Bus as BusType } from '@/lib/supabase'
 import { useUser } from '@/contexts/UserContext'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { QueueManager } from '@/lib/queue-manager'
+import { QueueManager, TimeoutInfo } from '@/lib/queue-manager'
 
 interface Passenger {
   id: number
@@ -32,6 +32,7 @@ export default function BusesPage() {
   const [error, setError] = useState<string | null>(null)
   const [loadingPassengers, setLoadingPassengers] = useState<Record<number, boolean>>({})
   const [pendingPassengers, setPendingPassengers] = useState<Record<number, Passenger[]>>({})
+  const [userTimeoutInfo, setUserTimeoutInfo] = useState<TimeoutInfo | null>(null)
   const { currentUser, queuePosition, setQueuePosition } = useUser()
   const router = useRouter()
 
@@ -613,10 +614,49 @@ export default function BusesPage() {
     }
   }
 
+  const formatTimeRemaining = (milliseconds: number): string => {
+    const seconds = Math.ceil(milliseconds / 1000)
+    const minutes = Math.floor(seconds / 60)
+    const remainingSeconds = seconds % 60
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+  }
+
+  const getTimeoutWarningColor = (timeRemaining: number): string => {
+    if (timeRemaining <= 10000) return 'text-red-600' // 10 seconds or less
+    if (timeRemaining <= 30000) return 'text-orange-600' // 30 seconds or less
+    return 'text-yellow-600' // More than 30 seconds
+  }
+
   // Add useEffect hooks after function definitions
   useEffect(() => {
     loadBuses()
   }, [loadBuses])
+
+  // Monitor user timeout when in booking zone
+  useEffect(() => {
+    if (!currentUser || queuePosition === null || queuePosition > 20) {
+      setUserTimeoutInfo(null)
+      return
+    }
+
+    // Start monitoring timeout for user in booking zone
+    const updateTimeoutInfo = async () => {
+      try {
+        const timeoutInfo = await QueueManager.getUserTimeoutInfo(currentUser.id)
+        setUserTimeoutInfo(timeoutInfo)
+      } catch (error) {
+        console.error('Error updating timeout info:', error)
+      }
+    }
+
+    // Update immediately
+    updateTimeoutInfo()
+
+    // Update every second for countdown
+    const interval = setInterval(updateTimeoutInfo, 1000)
+
+    return () => clearInterval(interval)
+  }, [currentUser, queuePosition])
 
   useEffect(() => {
     if (currentUser) {
@@ -691,6 +731,41 @@ export default function BusesPage() {
           </Link>
         </div>
 
+        {/* Timeout Warning Banner */}
+        {userTimeoutInfo && userTimeoutInfo.isInBookingZone && (
+          <Card className="mb-6 border-2 border-yellow-200 bg-yellow-50">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center bg-yellow-100 text-yellow-600">
+                    <Timer className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-yellow-800">
+                      Booking Timeout Warning
+                    </p>
+                    <p className="text-sm text-yellow-600">
+                      You have limited time to complete your bus booking
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className={`text-2xl font-bold ${getTimeoutWarningColor(userTimeoutInfo.timeRemaining)}`}>
+                    {formatTimeRemaining(userTimeoutInfo.timeRemaining)}
+                  </div>
+                  <div className="text-xs text-yellow-600">Time Remaining</div>
+                </div>
+              </div>
+              <div className="mt-3 p-3 bg-yellow-100 rounded border border-yellow-300">
+                <p className="text-sm text-yellow-800">
+                  <strong>Important:</strong> You have 5 minutes from when you joined the queue to complete your bus booking. 
+                  After this time, you will be automatically removed from the queue and will need to rejoin.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Error Display */}
         {error && (
           <Card className="mb-8 border-red-200 bg-red-50">
@@ -757,6 +832,15 @@ export default function BusesPage() {
                         : `You are in position ${queuePosition} and need to be in the top 20 to book`
                     }
                   </p>
+                  {/* Timeout info for users in booking zone */}
+                  {userTimeoutInfo && userTimeoutInfo.isInBookingZone && (
+                    <div className="mt-2 flex items-center space-x-2">
+                      <Timer className="w-4 h-4 text-yellow-600" />
+                      <span className={`text-sm font-medium ${getTimeoutWarningColor(userTimeoutInfo.timeRemaining)}`}>
+                        {formatTimeRemaining(userTimeoutInfo.timeRemaining)} to complete booking
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="text-right">
@@ -764,6 +848,15 @@ export default function BusesPage() {
                   {queuePosition === null ? 'N/A' : queuePosition}
                 </div>
                 <div className="text-xs text-gray-500">Queue Position</div>
+                {/* Timeout countdown for users in booking zone */}
+                {userTimeoutInfo && userTimeoutInfo.isInBookingZone && (
+                  <div className="mt-2">
+                    <div className={`text-lg font-bold ${getTimeoutWarningColor(userTimeoutInfo.timeRemaining)}`}>
+                      {formatTimeRemaining(userTimeoutInfo.timeRemaining)}
+                    </div>
+                    <div className="text-xs text-yellow-600">Time Left</div>
+                  </div>
+                )}
               </div>
             </div>
           </CardContent>

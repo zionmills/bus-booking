@@ -62,7 +62,6 @@ A modern, mobile-first bus booking application built with Next.js, shadcn/ui, an
 
 6. **Test Camera Features**
    - Use the main app for bus booking
-   - Visit `/qr-demo` to test the enhanced camera scanner
    - Try switching between different cameras
    - Test permission handling by denying/accepting camera access
 

@@ -14,10 +14,158 @@ export interface QueueUser {
   joined_at: string
 }
 
+export interface TimeoutInfo {
+  userId: number
+  position: number
+  timeRemaining: number
+  isInBookingZone: boolean
+}
+
 /**
  * Queue Manager - Handles all queue operations with automatic position management
  */
 export class QueueManager {
+  private static timeoutCheckInterval: NodeJS.Timeout | null = null
+  private static readonly BOOKING_TIMEOUT_MS = 300 * 1000 // 300 seconds (5 minutes)
+  private static readonly BOOKING_ZONE_SIZE = 20
+
+  /**
+   * Start the timeout monitoring system
+   */
+  static startTimeoutMonitoring(): void {
+    if (this.timeoutCheckInterval) {
+      return // Already running
+    }
+
+    // Check every 10 seconds for timeouts
+    this.timeoutCheckInterval = setInterval(async () => {
+      try {
+        await this.checkAndRemoveTimeouts()
+      } catch (error) {
+        console.error('Error in timeout monitoring:', error)
+      }
+    }, 10000)
+  }
+
+  /**
+   * Stop the timeout monitoring system
+   */
+  static stopTimeoutMonitoring(): void {
+    if (this.timeoutCheckInterval) {
+      clearInterval(this.timeoutCheckInterval)
+      this.timeoutCheckInterval = null
+    }
+  }
+
+  /**
+   * Check for users who have exceeded the booking timeout and remove them
+   */
+  private static async checkAndRemoveTimeouts(): Promise<void> {
+    try {
+      const now = new Date()
+      const timeoutThreshold = new Date(now.getTime() - this.BOOKING_TIMEOUT_MS)
+
+      // Get users in positions 1-20 who joined before the timeout threshold
+      const { data: timeoutUsers, error } = await supabase
+        .from('queue')
+        .select('id, user_id, position, joined_at')
+        .lte('position', this.BOOKING_ZONE_SIZE)
+        .lt('joined_at', timeoutThreshold.toISOString())
+        .order('position')
+
+      if (error) throw error
+
+      if (timeoutUsers && timeoutUsers.length > 0) {
+        console.log(`Removing ${timeoutUsers.length} users due to timeout`)
+        
+        // Remove each timed-out user
+        for (const user of timeoutUsers) {
+          if (user.user_id && user.position !== null) {
+            await this.removeUserFromQueue(user.user_id)
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error checking timeouts:', error)
+    }
+  }
+
+  /**
+   * Get timeout information for a specific user
+   * @param userId - The user's ID
+   * @returns Timeout information or null if user not in queue
+   */
+  static async getUserTimeoutInfo(userId: number): Promise<TimeoutInfo | null> {
+    try {
+      const { data: entry } = await supabase
+        .from('queue')
+        .select('position, joined_at')
+        .eq('user_id', userId)
+        .single()
+
+      if (!entry || entry.position === null) return null
+
+      const joinedAt = new Date(entry.joined_at)
+      const now = new Date()
+      const timeInQueue = now.getTime() - joinedAt.getTime()
+      const isInBookingZone = entry.position <= this.BOOKING_ZONE_SIZE
+      
+      if (isInBookingZone) {
+        const timeRemaining = Math.max(0, this.BOOKING_TIMEOUT_MS - timeInQueue)
+        return {
+          userId,
+          position: entry.position,
+          timeRemaining,
+          isInBookingZone: true
+        }
+      } else {
+        return {
+          userId,
+          position: entry.position,
+          timeRemaining: 0,
+          isInBookingZone: false
+        }
+      }
+    } catch (error) {
+      console.error('Error getting user timeout info:', error)
+      return null
+    }
+  }
+
+  /**
+   * Get timeout information for all users in the booking zone (positions 1-20)
+   * @returns Array of timeout information for users in booking zone
+   */
+  static async getBookingZoneTimeoutInfo(): Promise<TimeoutInfo[]> {
+    try {
+      const { data: entries, error } = await supabase
+        .from('queue')
+        .select('user_id, position, joined_at')
+        .order('position')
+
+      if (error) throw error
+
+      const now = new Date()
+      return (entries || [])
+        .filter(entry => entry.user_id !== null && entry.position !== null && entry.position <= this.BOOKING_ZONE_SIZE)
+        .map(entry => {
+          const joinedAt = new Date(entry.joined_at)
+          const timeInQueue = now.getTime() - joinedAt.getTime()
+          const timeRemaining = Math.max(0, this.BOOKING_TIMEOUT_MS - timeInQueue)
+          
+          return {
+            userId: entry.user_id!,
+            position: entry.position!,
+            timeRemaining,
+            isInBookingZone: true
+          }
+        })
+    } catch (error) {
+      console.error('Error getting booking zone timeout info:', error)
+      return []
+    }
+  }
+
   /**
    * Add a user to the end of the queue
    * @param userId - The user's ID to add

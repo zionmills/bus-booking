@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import { User, QrCode, Users } from 'lucide-react'
+import { User, Users, Scan } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
 import QRScanner from '@/components/QRScanner'
@@ -22,18 +22,7 @@ export default function HomePage() {
   const [consentGiven, setConsentGiven] = useState(false)
   const { currentUser, setCurrentUser, queuePosition, setQueuePosition } = useUser()
 
-  // Add demo page link in the header
-  const renderHeader = () => (
-    <div className="absolute top-4 right-4">
-      <Link 
-        href="/qr-demo" 
-        className="inline-flex items-center px-3 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
-      >
-        <QrCode className="w-4 h-4 mr-2" />
-        Test Scanner
-      </Link>
-    </div>
-  )
+
 
   const handleQRScan = async (scannedQR: string) => {
     setQrCode(scannedQR)
@@ -168,7 +157,6 @@ export default function HomePage() {
   if (step === 'qr') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 relative">
-        {renderHeader()}
         <div className="max-w-md mx-auto pt-20">
           {/* Queue Status Banner */}
           <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
@@ -189,7 +177,7 @@ export default function HomePage() {
           <Card className="shadow-lg">
             <CardHeader className="text-center">
               <div className="mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
-                <QrCode className="w-8 h-8 text-blue-600" />
+                <Scan className="w-8 h-8 text-blue-600" />
               </div>
               <CardTitle className="text-2xl">Welcome to Bus Booking</CardTitle>
               <CardDescription>
@@ -240,7 +228,6 @@ export default function HomePage() {
   if (step === 'name') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 relative">
-        {renderHeader()}
         <div className="max-w-md mx-auto pt-20">
           <Card className="shadow-lg">
             <CardHeader className="text-center">
@@ -320,7 +307,6 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 relative">
-      {renderHeader()}
       <div className="max-w-md mx-auto pt-20">
         <Card className="shadow-lg">
           <CardHeader className="text-center">

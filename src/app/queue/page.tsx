@@ -5,18 +5,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { Users, Clock, ArrowLeft, CheckCircle, AlertCircle } from 'lucide-react'
+import { Users, Clock, ArrowLeft, CheckCircle, AlertCircle, Timer } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
 
 import { useUser } from '@/contexts/UserContext'
-import { QueueManager } from '@/lib/queue-manager'
+import { QueueManager, TimeoutInfo } from '@/lib/queue-manager'
 
 interface QueueEntry {
   id: number
   position: number
   userName: string
   joinedAt: string
+  timeoutInfo?: TimeoutInfo
 }
 
 export default function QueuePage() {
@@ -25,17 +26,40 @@ export default function QueuePage() {
   const [isInQueue, setIsInQueue] = useState(false)
   const [loading, setLoading] = useState(false)
   const [queueSize, setQueueSize] = useState(0)
+  const [timeoutInfos, setTimeoutInfos] = useState<TimeoutInfo[]>([])
   const maxQueueSize = 40
 
   // Check if user is in queue based on context
   useEffect(() => {
+    const wasInQueue = isInQueue
     setIsInQueue(queuePosition !== null)
-  }, [queuePosition])
+    
+    // If user just left the queue, clear timeout info
+    if (wasInQueue && queuePosition === null) {
+      setTimeoutInfos([])
+    }
+  }, [queuePosition, isInQueue])
 
   useEffect(() => {
-    // Simulate loading queue data
+    // Start timeout monitoring when component mounts
+    QueueManager.startTimeoutMonitoring()
+    
+    // Load queue data
     loadQueueData()
-  }, [])
+    
+    // Set up periodic refresh for timeout info only when user is in queue
+    const timeoutInterval = setInterval(() => {
+      if (isInQueue && queuePosition !== null && queueSize > 0) {
+        updateTimeoutInfo()
+      }
+    }, 1000) // Update every second for countdown
+
+    // Cleanup function
+    return () => {
+      clearInterval(timeoutInterval)
+      QueueManager.stopTimeoutMonitoring()
+    }
+  }, [isInQueue, queuePosition, queueSize])
 
   const loadQueueData = async () => {
     setLoading(true)
@@ -55,12 +79,57 @@ export default function QueuePage() {
       setQueueEntries(formattedQueue)
       setQueueSize(queueSize)
       
+      // Only load timeout information if user is in queue
+      if (isInQueue && queuePosition !== null) {
+        await updateTimeoutInfo()
+      } else {
+        // Clear timeout info if user is not in queue
+        setTimeoutInfos([])
+      }
+      
     } catch (error) {
       console.error('Error loading queue:', error)
       toast.error('Failed to load queue data')
     } finally {
       setLoading(false)
     }
+  }
+
+  const updateTimeoutInfo = async () => {
+    try {
+      // Only update timeout info if there are actually people in the queue
+      if (queueSize === 0) {
+        setTimeoutInfos([])
+        return
+      }
+      
+      const timeoutData = await QueueManager.getBookingZoneTimeoutInfo()
+      setTimeoutInfos(timeoutData)
+      
+      // Update queue entries with timeout info
+      setQueueEntries(prev => prev.map(entry => {
+        const timeoutInfo = timeoutData.find(t => t.userId === entry.id)
+        return {
+          ...entry,
+          timeoutInfo
+        }
+      }))
+    } catch (error) {
+      console.error('Error updating timeout info:', error)
+    }
+  }
+
+  const formatTimeRemaining = (milliseconds: number): string => {
+    const seconds = Math.ceil(milliseconds / 1000)
+    const minutes = Math.floor(seconds / 60)
+    const remainingSeconds = seconds % 60
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+  }
+
+  const getTimeoutWarningColor = (timeRemaining: number): string => {
+    if (timeRemaining <= 10000) return 'text-red-600' // 10 seconds or less
+    if (timeRemaining <= 30000) return 'text-orange-600' // 30 seconds or less
+    return 'text-yellow-600' // More than 30 seconds
   }
 
   const joinQueue = async () => {
@@ -220,6 +289,38 @@ export default function QueuePage() {
                 Only people in positions 1-20 can book buses
               </p>
             </div>
+
+            {/* Timeout Warning - Only show when there are people in queue */}
+            {timeoutInfos.length > 0 && queueSize > 0 && isInQueue && (
+              <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                <div className="flex items-center space-x-3">
+                  <Timer className="w-5 h-5 text-yellow-600" />
+                  <div>
+                    <p className="font-semibold text-yellow-800">
+                      Booking Timeout Warning
+                    </p>
+                    <p className="text-sm text-yellow-600">
+                      Users in positions 1-20 have 5 minutes to book. After that, they'll be removed from the queue.
+                    </p>
+                    <div className="mt-2 space-y-1">
+                      {timeoutInfos.slice(0, 3).map((timeout) => (
+                        <div key={timeout.userId} className="flex justify-between text-xs">
+                          <span>Position {timeout.position}:</span>
+                          <span className={getTimeoutWarningColor(timeout.timeRemaining)}>
+                            {formatTimeRemaining(timeout.timeRemaining)} remaining
+                          </span>
+                        </div>
+                      ))}
+                      {timeoutInfos.length > 3 && (
+                        <p className="text-xs text-yellow-600">
+                          ...and {timeoutInfos.length - 3} more users with timeouts
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             
             {isInQueue ? (
               <div className="p-4 bg-green-50 rounded-lg border border-green-200">
@@ -230,8 +331,24 @@ export default function QueuePage() {
                       You&apos;re in the queue!
                     </p>
                     <p className="text-sm text-green-600">
-                                             Position: <span className="font-bold">{queuePosition}</span>
+                      Position: <span className="font-bold">{queuePosition}</span>
                     </p>
+                    {/* Personal timeout warning */}
+                    {queuePosition && queuePosition <= 20 && queueSize > 0 && (() => {
+                      const userTimeout = timeoutInfos.find(t => t.userId === currentUser?.id)
+                      return userTimeout && userTimeout.timeRemaining > 0 ? (
+                        <div className="mt-2 p-2 bg-yellow-100 rounded border border-yellow-300">
+                          <div className="flex items-center space-x-2">
+                            <Timer className="w-4 h-4 text-yellow-600" />
+                            <span className="text-xs text-yellow-800">
+                              You have <span className="font-bold">
+                                {formatTimeRemaining(userTimeout.timeRemaining)}
+                              </span> to book your bus
+                            </span>
+                          </div>
+                        </div>
+                      ) : null
+                    })()}
                   </div>
                 </div>
               </div>
@@ -279,6 +396,8 @@ export default function QueuePage() {
               >
                 Refresh
               </Button>
+              
+
             </div>
           </CardContent>
         </Card>
@@ -290,9 +409,9 @@ export default function QueuePage() {
               <Clock className="w-5 h-5 mr-2 text-gray-600" />
               Current Queue ({queueEntries.length} people)
             </CardTitle>
-            <CardDescription>
-              Only positions 1-20 can book buses. Positions 21+ must wait their turn.
-            </CardDescription>
+                         <CardDescription>
+               Only positions 1-20 can book buses. Positions 21+ must wait their turn. Users in the booking zone have 5 minutes to complete their booking.
+             </CardDescription>
           </CardHeader>
           <CardContent>
             {queueEntries.length === 0 ? (
@@ -361,6 +480,15 @@ export default function QueuePage() {
                           <Badge variant="outline" className="border-green-500 text-green-700">
                             You
                           </Badge>
+                        )}
+                        {/* Timeout Countdown */}
+                        {entry.timeoutInfo && entry.timeoutInfo.isInBookingZone && entry.timeoutInfo.timeRemaining > 0 && (
+                          <div className="flex items-center space-x-1">
+                            <Timer className="w-3 h-3 text-gray-500" />
+                            <span className={`text-xs font-mono ${getTimeoutWarningColor(entry.timeoutInfo.timeRemaining)}`}>
+                              {formatTimeRemaining(entry.timeoutInfo.timeRemaining)}
+                            </span>
+                          </div>
                         )}
                       </div>
                     </div>
