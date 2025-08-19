@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -15,7 +15,41 @@ import { QueueManager } from '@/lib/queue-manager'
 export default function BookingConfirmationPage() {
   const { currentUser, setQueuePosition } = useUser()
   const [loading, setLoading] = useState(false)
+  const [userBooking, setUserBooking] = useState<{ busId: number | null }>({ busId: null })
+  const [loadingBooking, setLoadingBooking] = useState(true)
   const router = useRouter()
+
+  // Load user's booking information
+  useEffect(() => {
+    const loadUserBooking = async () => {
+      if (!currentUser) return
+      
+      try {
+        setLoadingBooking(true)
+        const { data: booking, error } = await supabase
+          .from('bookings')
+          .select('bus_id')
+          .eq('user_id', currentUser.id)
+          .single()
+        
+        if (error && error.code !== 'PGRST116') { // PGRST116 is "not found" error
+          console.error('Error loading user booking:', error)
+          return
+        }
+        
+        if (booking) {
+          console.log('Setting userBooking in confirmation page with busId:', booking.bus_id)
+          setUserBooking({ busId: booking.bus_id })
+        }
+      } catch (error) {
+        console.error('Error loading user booking:', error)
+      } finally {
+        setLoadingBooking(false)
+      }
+    }
+
+    loadUserBooking()
+  }, [currentUser])
 
   const handleRebook = async () => {
     if (!currentUser) {
@@ -76,6 +110,36 @@ export default function BookingConfirmationPage() {
     )
   }
 
+  if (loadingBooking) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+        <div className="max-w-2xl mx-auto pt-20">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading your booking...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!userBooking.busId) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+        <div className="max-w-2xl mx-auto pt-20">
+          <div className="text-center">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">No Booking Found</h2>
+            <p className="text-gray-600 mb-6">You don't have an active bus booking.</p>
+            <Link href="/buses">
+              <Button>Go to Buses</Button>
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  console.log('Rendering confirmation page with userBooking:', userBooking)
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
       <div className="max-w-2xl mx-auto pt-8">
@@ -100,13 +164,13 @@ export default function BookingConfirmationPage() {
               <CheckCircle className="w-8 h-8 text-green-600" />
             </div>
             <CardTitle className="text-2xl text-green-800">
-              You&apos;re Booked on Bus 3!
+              You&apos;re Booked on Bus {userBooking.busId}!
             </CardTitle>
           </CardHeader>
           <CardContent className="text-center space-y-6">
             <div className="flex items-center justify-center space-x-3">
               <Bus className="w-8 h-8 text-blue-600" />
-              <span className="text-3xl font-bold text-blue-600">Bus 3</span>
+              <span className="text-3xl font-bold text-blue-600">Bus {userBooking.busId}</span>
             </div>
             
             <div className="bg-white rounded-lg p-4 border border-green-200">

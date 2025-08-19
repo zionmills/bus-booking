@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useReducer, useCallback } from 'react'
+import { useState, useEffect, useReducer, useCallback, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -268,8 +268,8 @@ export default function HomePage() {
     }
   }, [state.status])
   
-  // Mobile-specific debouncing
-  const getDebounceTime = () => isMobile ? 1500 : 1000
+  // Mobile-specific debouncing - memoized to maintain stable identity
+  const debounceTime = useMemo(() => isMobile ? 1500 : 1000, [isMobile])
   
   const handleQRScan = useCallback(async (scannedQR: string) => {
     const now = Date.now()
@@ -288,7 +288,7 @@ export default function HomePage() {
     }
     
     // Mobile-specific debouncing
-    if (now - state.lastScanTime < getDebounceTime()) {
+    if (now - state.lastScanTime < debounceTime) {
       console.log('Debouncing: ignoring rapid successive scan')
       return
     }
@@ -342,7 +342,7 @@ export default function HomePage() {
       dispatch({ type: 'SET_LOADING', payload: false })
       dispatch({ type: 'SET_PROCESSING_QR', payload: false })
     }
-  }, [state.isProcessingQR, state.isLoading, state.lastScanTime, state.processedQRs, getDebounceTime])
+  }, [state.isProcessingQR, state.isLoading, state.lastScanTime, state.processedQRs, debounceTime])
   
   const handleExistingUser = async (delegate: { id: number; name: string | null; qr_code: string | null; created_at: string }) => {
     setCurrentUser(delegate)
@@ -449,7 +449,7 @@ export default function HomePage() {
     // Additional mobile protection for manual submission
     if (isMobile) {
       const now = Date.now()
-      if (now - state.lastScanTime < getDebounceTime()) {
+      if (now - state.lastScanTime < debounceTime) {
         console.log('Mobile debouncing: ignoring rapid manual submission')
         return
       }
