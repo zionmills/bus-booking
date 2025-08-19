@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useReducer, useCallback } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import { User, Users, Scan } from 'lucide-react'
+import { User, Users, Scan, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
 import QRScanner from '@/components/QRScanner'
@@ -14,61 +14,229 @@ import { supabase } from '@/lib/supabase'
 import { useUser } from '@/contexts/UserContext'
 import { QueueManager } from '@/lib/queue-manager'
 
-export default function HomePage() {
-  const [step, setStep] = useState<'qr' | 'name' | 'booking'>('qr')
-  const [userName, setUserName] = useState('')
-  const [qrCode, setQrCode] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  const [consentGiven, setConsentGiven] = useState(false)
-  const [isProcessingQR, setIsProcessingQR] = useState(false) // Add flag to prevent multiple QR processing
-  const [processedQRs, setProcessedQRs] = useState<Set<string>>(new Set()) // Track processed QR codes
-  const [lastProcessedTime, setLastProcessedTime] = useState<number>(0) // Track last processing time for mobile debouncing
-  const { currentUser, setCurrentUser, queuePosition, setQueuePosition } = useUser()
+// Types for better type safety
+interface UserData {
+  qrCode: string
+  name: string
+  consent: boolean
+}
 
-  // Reset processing state when step changes
+interface AppState {
+  status: 'scanning' | 'registering' | 'ready' | 'error'
+  userData: UserData | null
+  error: string | null
+  isLoading: boolean
+  isProcessingQR: boolean
+  lastScanTime: number
+  processedQRs: Set<string>
+}
+
+// Action types for the reducer
+type AppAction =
+  | { type: 'START_SCANNING' }
+  | { type: 'QR_SCANNED'; payload: string }
+  | { type: 'START_REGISTRATION'; payload: string }
+  | { type: 'UPDATE_USER_DATA'; payload: Partial<UserData> }
+  | { type: 'REGISTRATION_COMPLETE'; payload: { user: any; queuePosition: number } }
+  | { type: 'SET_ERROR'; payload: string }
+  | { type: 'SET_LOADING'; payload: boolean }
+  | { type: 'SET_PROCESSING_QR'; payload: boolean }
+  | { type: 'RESET' }
+  | { type: 'ADD_PROCESSED_QR'; payload: string }
+
+// Initial state
+const initialState: AppState = {
+  status: 'scanning',
+  userData: null,
+  error: null,
+  isLoading: false,
+  isProcessingQR: false,
+  lastScanTime: 0,
+  processedQRs: new Set()
+}
+
+// Reducer function for predictable state updates
+function appReducer(state: AppState, action: AppAction): AppState {
+  switch (action.type) {
+    case 'START_SCANNING':
+      return {
+        ...state,
+        status: 'scanning',
+        error: null,
+        userData: null,
+        processedQRs: new Set()
+      }
+    
+    case 'QR_SCANNED':
+      return {
+        ...state,
+        lastScanTime: Date.now()
+      }
+    
+    case 'START_REGISTRATION':
+      return {
+        ...state,
+        status: 'registering',
+        userData: {
+          qrCode: action.payload,
+          name: '',
+          consent: false
+        },
+        error: null
+      }
+    
+    case 'UPDATE_USER_DATA':
+      return {
+        ...state,
+        userData: state.userData ? { ...state.userData, ...action.payload } : null
+      }
+    
+    case 'REGISTRATION_COMPLETE':
+      return {
+        ...state,
+        status: 'ready',
+        isLoading: false,
+        error: null
+      }
+    
+    case 'SET_ERROR':
+      return {
+        ...state,
+        status: 'error',
+        error: action.payload,
+        isLoading: false,
+        isProcessingQR: false
+      }
+    
+    case 'SET_LOADING':
+      return {
+        ...state,
+        isLoading: action.payload
+      }
+    
+    case 'SET_PROCESSING_QR':
+      return {
+        ...state,
+        isProcessingQR: action.payload
+      }
+    
+    case 'RESET':
+      return initialState
+    
+    case 'ADD_PROCESSED_QR':
+      const newProcessedQRs = new Set(state.processedQRs)
+      newProcessedQRs.add(action.payload)
+      return {
+        ...state,
+        processedQRs: newProcessedQRs
+      }
+    
+    default:
+      return state
+  }
+}
+
+// Custom hook for mobile detection
+const useMobileDetection = () => {
+  const [isMobile, setIsMobile] = useState(false)
+  
   useEffect(() => {
-    if (step !== 'qr') {
-      setIsProcessingQR(false)
-      // Reset mobile debouncing when moving to next step
-      setLastProcessedTime(0)
-    } else {
-      // Reset processed QR codes when back to scanning step
-      setProcessedQRs(new Set())
-      setLastProcessedTime(0)
+    const checkMobile = () => {
+      if (typeof window === 'undefined') return false
+      return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
     }
-  }, [step])
+    
+    setIsMobile(checkMobile())
+  }, [])
+  
+  return isMobile
+}
 
-  const handleQRScan = async (scannedQR: string) => {
+// Custom hook for state persistence
+const useStatePersistence = (state: AppState) => {
+  useEffect(() => {
+    if (state.status !== 'scanning') {
+      localStorage.setItem('bus-booking-state', JSON.stringify({
+        status: state.status,
+        userData: state.userData,
+        lastScanTime: state.lastScanTime
+      }))
+    }
+  }, [state.status, state.userData, state.lastScanTime])
+  
+  const restoreState = useCallback(() => {
+    const saved = localStorage.getItem('bus-booking-state')
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved)
+        return parsed
+      } catch (e) {
+        console.error('Failed to restore state:', e)
+        return null
+      }
+    }
+    return null
+  }, [])
+  
+  return { restoreState }
+}
+
+export default function HomePage() {
+  const [state, dispatch] = useReducer(appReducer, initialState)
+  const { currentUser, setCurrentUser, queuePosition, setQueuePosition } = useUser()
+  const isMobile = useMobileDetection()
+  const { restoreState } = useStatePersistence(state)
+  
+  // Restore state on mount
+  useEffect(() => {
+    const savedState = restoreState()
+    if (savedState) {
+      if (savedState.status === 'registering' && savedState.userData) {
+        dispatch({ type: 'START_REGISTRATION', payload: savedState.userData.qrCode })
+        // Restore form data
+        Object.entries(savedState.userData).forEach(([key, value]) => {
+          if (key !== 'qrCode') {
+            dispatch({ type: 'UPDATE_USER_DATA', payload: { [key]: value } })
+          }
+        })
+      }
+    }
+  }, [restoreState])
+  
+  // Clear localStorage when returning to scanning
+  useEffect(() => {
+    if (state.status === 'scanning') {
+      localStorage.removeItem('bus-booking-state')
+    }
+  }, [state.status])
+  
+  // Mobile-specific debouncing
+  const getDebounceTime = () => isMobile ? 1500 : 1000
+  
+  const handleQRScan = useCallback(async (scannedQR: string) => {
     const now = Date.now()
     
     // Prevent multiple simultaneous QR processing
-    if (isProcessingQR || isLoading) {
+    if (state.isProcessingQR || state.isLoading) {
       console.log('QR processing already in progress, ignoring new scan')
       return
     }
     
-    // Mobile-specific debouncing: prevent rapid successive scans (less than 2 seconds apart)
-    if (now - lastProcessedTime < 2000) {
-      console.log('Mobile debouncing: ignoring rapid successive scan')
+    // Mobile-specific debouncing
+    if (now - state.lastScanTime < getDebounceTime()) {
+      console.log('Debouncing: ignoring rapid successive scan')
       return
     }
     
     // Prevent processing the same QR code multiple times
-    if (processedQRs.has(scannedQR)) {
+    if (state.processedQRs.has(scannedQR)) {
       console.log('QR code already processed, ignoring duplicate scan')
       return
     }
     
-    // Prevent processing the same QR code multiple times in the same session
-    if (qrCode === scannedQR && step !== 'qr') {
-      console.log('Same QR code already processed in this session, ignoring duplicate scan')
-      return
-    }
-    
-    setIsProcessingQR(true)
-    setQrCode(scannedQR)
-    setIsLoading(true)
-    setLastProcessedTime(now)
+    dispatch({ type: 'QR_SCANNED', payload: scannedQR })
+    dispatch({ type: 'SET_PROCESSING_QR', payload: true })
+    dispatch({ type: 'SET_LOADING', payload: true })
     
     try {
       // Check if delegate exists with this QR code
@@ -82,97 +250,102 @@ export default function HomePage() {
       console.log('Delegate lookup result:', { delegate, delegateError })
       
       if (delegateError && delegateError.code === 'PGRST116') {
-        // No delegate found with this QR code, prompt for name
-        setStep('name')
+        // No delegate found, start registration
+        dispatch({ type: 'START_REGISTRATION', payload: scannedQR })
         toast.info('New QR code detected. Please enter your name to continue.')
       } else if (delegateError) {
-        // Other error occurred
-        console.error('Delegate lookup error:', delegateError)
         throw new Error(`Failed to check QR code: ${delegateError.message}`)
       } else if (delegate) {
-        // Delegate exists, set as current user
-        setCurrentUser(delegate)
-        
-        // Check if user is already in queue
-        let currentPosition = await QueueManager.getUserQueuePosition(delegate.id)
-        
-        if (currentPosition) {
-          // User is already in queue
-          setQueuePosition(currentPosition)
-          toast.info(`Welcome back! You're in the queue at position ${currentPosition}`)
-        } else {
-          // User is not in queue, add them automatically
-          try {
-            const isFull = await QueueManager.isQueueFull()
-            if (isFull) {
-              toast.error('Queue is currently full. Please try again later.')
-              return
-            }
-            
-            currentPosition = await QueueManager.addUserToQueue(delegate.id)
-            setQueuePosition(currentPosition)
-            toast.success(`Welcome! You've been added to the queue at position ${currentPosition}`)
-          } catch (error) {
-            console.error('Error adding user to queue:', error)
-            toast.error('Failed to add you to the queue. Please try again.')
-            return
-          }
-        }
-        
-        // Redirect to buses page
-        window.location.href = '/buses'
+        // Delegate exists, handle existing user
+        await handleExistingUser(delegate)
       }
       
-      // Mark this QR code as processed to prevent duplicate queries
-      setProcessedQRs(prev => new Set(prev).add(scannedQR))
+      // Mark this QR code as processed
+      dispatch({ type: 'ADD_PROCESSED_QR', payload: scannedQR })
       
     } catch (error) {
       console.error('Error:', error)
-      if (error instanceof Error) {
-        toast.error(error.message)
-      } else {
-        toast.error('Failed to process QR code. Please try again.')
-      }
+      const errorMessage = error instanceof Error ? error.message : 'Failed to process QR code. Please try again.'
+      dispatch({ type: 'SET_ERROR', payload: errorMessage })
+      toast.error(errorMessage)
     } finally {
-      setIsLoading(false)
-      setIsProcessingQR(false)
+      dispatch({ type: 'SET_LOADING', payload: false })
+      dispatch({ type: 'SET_PROCESSING_QR', payload: false })
     }
+  }, [state.isProcessingQR, state.isLoading, state.lastScanTime, state.processedQRs])
+  
+  const handleExistingUser = async (delegate: any) => {
+    setCurrentUser(delegate)
+    
+    // Check if user is already in queue
+    let currentPosition = await QueueManager.getUserQueuePosition(delegate.id)
+    
+    if (currentPosition) {
+      // User is already in queue
+      setQueuePosition(currentPosition)
+      toast.info(`Welcome back! You're in the queue at position ${currentPosition}`)
+    } else {
+      // User is not in queue, add them automatically
+      try {
+        const isFull = await QueueManager.isQueueFull()
+        if (isFull) {
+          dispatch({ type: 'SET_ERROR', payload: 'Queue is currently full. Please try again later.' })
+          toast.error('Queue is currently full. Please try again later.')
+          return
+        }
+        
+        currentPosition = await QueueManager.addUserToQueue(delegate.id)
+        setQueuePosition(currentPosition)
+        toast.success(`Welcome! You've been added to the queue at position ${currentPosition}`)
+      } catch (error) {
+        console.error('Error adding user to queue:', error)
+        dispatch({ type: 'SET_ERROR', payload: 'Failed to add you to the queue. Please try again.' })
+        toast.error('Failed to add you to the queue. Please try again.')
+        return
+      }
+    }
+    
+    // Redirect to buses page
+    window.location.href = '/buses'
   }
-
+  
   const handleNameSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!userName.trim()) {
+    
+    if (!state.userData?.name.trim()) {
       toast.error('Please enter your name')
       return
     }
-    if (!consentGiven) {
+    
+    if (!state.userData?.consent) {
       toast.error('Please consent to the terms before continuing')
       return
     }
     
-    setIsLoading(true)
+    dispatch({ type: 'SET_LOADING', payload: true })
     
     try {
-      // Create new delegate with the scanned QR code and name
-      console.log('Creating new delegate with:', { name: userName, qr_code: qrCode })
+      // Create new delegate
       const { data: newDelegate, error: createError } = await supabase
         .from('delegates')
-        .insert([{ name: userName, qr_code: qrCode }])
+        .insert([{ 
+          name: state.userData.name.trim(), 
+          qr_code: state.userData.qrCode 
+        }])
         .select()
         .single()
       
       if (createError) {
-        console.error('Create delegate error:', createError)
         throw new Error(`Failed to create delegate: ${createError.message}`)
       }
       
-      console.log('New delegate created:', newDelegate)
       setCurrentUser(newDelegate)
       
       // Add new user to queue automatically
       try {
         const isFull = await QueueManager.isQueueFull()
         if (isFull) {
+          dispatch({ type: 'SET_ERROR', payload: 'Queue is currently full. Please try again later.' })
           toast.error('Queue is currently full. Please try again later.')
           return
         }
@@ -180,48 +353,47 @@ export default function HomePage() {
         const queuePosition = await QueueManager.addUserToQueue(newDelegate.id)
         setQueuePosition(queuePosition)
         toast.success(`Registration successful! You've been added to the queue at position ${queuePosition}`)
+        
+        dispatch({ type: 'REGISTRATION_COMPLETE', payload: { user: newDelegate, queuePosition } })
+        
       } catch (error) {
         console.error('Error adding user to queue:', error)
+        dispatch({ type: 'SET_ERROR', payload: 'Registration successful, but failed to add you to the queue. Please try again.' })
         toast.error('Registration successful, but failed to add you to the queue. Please try again.')
         return
       }
       
-      setStep('booking')
-      
     } catch (error) {
       console.error('Error:', error)
-      if (error instanceof Error) {
-        toast.error(error.message)
-      } else {
-        toast.error('Failed to create registration. Please try again.')
-      }
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create registration. Please try again.'
+      dispatch({ type: 'SET_ERROR', payload: errorMessage })
+      toast.error(errorMessage)
     } finally {
-      setIsLoading(false)
+      dispatch({ type: 'SET_LOADING', payload: false })
     }
   }
-
-  // Mobile detection utility
-  const isMobile = () => {
-    if (typeof window === 'undefined') return false
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-  }
-
+  
   const handleManualQRSubmit = () => {
-    if (!qrCode.trim() || isLoading || isProcessingQR || processedQRs.has(qrCode.trim())) return
+    if (!state.userData?.qrCode?.trim() || state.isLoading || state.isProcessingQR) return
     
     // Additional mobile protection for manual submission
-    if (isMobile()) {
+    if (isMobile) {
       const now = Date.now()
-      if (now - lastProcessedTime < 2000) {
+      if (now - state.lastScanTime < getDebounceTime()) {
         console.log('Mobile debouncing: ignoring rapid manual submission')
         return
       }
     }
     
-    handleQRScan(qrCode.trim())
+    handleQRScan(state.userData.qrCode.trim())
   }
-
-  if (step === 'qr') {
+  
+  const resetToScanning = () => {
+    dispatch({ type: 'RESET' })
+  }
+  
+  // Render based on state
+  if (state.status === 'scanning') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 relative">
         <div className="max-w-md mx-auto pt-20">
@@ -254,9 +426,7 @@ export default function HomePage() {
             <CardContent>
               <div className="space-y-4">
                 <div className="text-center">
-                  <QRScanner 
-                    onScan={handleQRScan}
-                  />
+                  <QRScanner onScan={handleQRScan} />
                 </div>
                 
                 <div className="text-center text-sm text-gray-600">
@@ -270,8 +440,11 @@ export default function HomePage() {
                     id="qr"
                     type="text"
                     placeholder="Enter QR code manually"
-                    value={qrCode}
-                    onChange={(e) => setQrCode(e.target.value)}
+                    value={state.userData?.qrCode || ''}
+                    onChange={(e) => dispatch({ 
+                      type: 'UPDATE_USER_DATA', 
+                      payload: { qrCode: e.target.value } 
+                    })}
                     className="text-lg"
                   />
                 </div>
@@ -280,9 +453,9 @@ export default function HomePage() {
                   onClick={handleManualQRSubmit}
                   className="w-full" 
                   size="lg"
-                  disabled={!qrCode.trim() || isLoading || isProcessingQR || processedQRs.has(qrCode.trim())}
+                  disabled={!state.userData?.qrCode?.trim() || state.isLoading || state.isProcessingQR}
                 >
-                  {isLoading ? 'Processing...' : 'Continue'}
+                  {state.isLoading ? 'Processing...' : 'Continue'}
                 </Button>
               </div>
             </CardContent>
@@ -291,8 +464,8 @@ export default function HomePage() {
       </div>
     )
   }
-
-  if (step === 'name') {
+  
+  if (state.status === 'registering') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 relative">
         <div className="max-w-md mx-auto pt-20">
@@ -314,8 +487,11 @@ export default function HomePage() {
                     id="name"
                     type="text"
                     placeholder="Enter your full name"
-                    value={userName}
-                    onChange={(e) => setUserName(e.target.value)}
+                    value={state.userData?.name || ''}
+                    onChange={(e) => dispatch({ 
+                      type: 'UPDATE_USER_DATA', 
+                      payload: { name: e.target.value } 
+                    })}
                     className="text-lg"
                     autoFocus
                   />
@@ -327,8 +503,11 @@ export default function HomePage() {
                     <div className="flex items-start space-x-3">
                       <Checkbox
                         id="consent"
-                        checked={consentGiven}
-                        onCheckedChange={(checked) => setConsentGiven(checked)}
+                        checked={state.userData?.consent || false}
+                        onCheckedChange={(checked) => dispatch({ 
+                          type: 'UPDATE_USER_DATA', 
+                          payload: { consent: checked } 
+                        })}
                         className="mt-1"
                       />
                       <div className="text-sm text-gray-700 leading-relaxed">
@@ -351,15 +530,15 @@ export default function HomePage() {
                   type="submit" 
                   className="w-full" 
                   size="lg"
-                  disabled={!userName.trim() || !consentGiven || isLoading}
+                  disabled={!state.userData?.name?.trim() || !state.userData?.consent || state.isLoading}
                 >
-                  {isLoading ? 'Creating Registration...' : 'Continue'}
+                  {state.isLoading ? 'Creating Registration...' : 'Continue'}
                 </Button>
                 
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setStep('qr')}
+                  onClick={resetToScanning}
                   className="w-full"
                 >
                   Back to QR Scan
@@ -371,7 +550,39 @@ export default function HomePage() {
       </div>
     )
   }
-
+  
+  if (state.status === 'error') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 relative">
+        <div className="max-w-md mx-auto pt-20">
+          <Card className="shadow-lg">
+            <CardHeader className="text-center">
+              <div className="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                <AlertCircle className="w-8 h-8 text-red-600" />
+              </div>
+              <CardTitle className="text-2xl">Something went wrong</CardTitle>
+              <CardDescription>
+                {state.error}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <Button 
+                  onClick={resetToScanning}
+                  className="w-full" 
+                  size="lg"
+                >
+                  Try Again
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
+  }
+  
+  // Ready state (step === 'booking')
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 relative">
       <div className="max-w-md mx-auto pt-20">
@@ -382,14 +593,14 @@ export default function HomePage() {
             </div>
             <CardTitle className="text-2xl">Ready to Book!</CardTitle>
             <CardDescription>
-              Welcome, {userName}! You can now select your bus.
+              Welcome, {state.userData?.name}! You can now select your bus.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               <div className="text-center p-4 bg-green-50 rounded-lg">
                 <p className="text-sm text-green-700">
-                  QR Code: <span className="font-mono font-bold">{currentUser?.qr_code || qrCode}</span>
+                  QR Code: <span className="font-mono font-bold">{currentUser?.qr_code || state.userData?.qrCode}</span>
                 </p>
                 {queuePosition && (
                   <div className="mt-2">
@@ -415,7 +626,7 @@ export default function HomePage() {
               </Link>
               <Button
                 variant="outline"
-                onClick={() => setStep('qr')}
+                onClick={resetToScanning}
                 className="w-full"
               >
                 Back to QR Scan
