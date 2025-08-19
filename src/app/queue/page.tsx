@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -40,28 +40,9 @@ export default function QueuePage() {
     }
   }, [queuePosition, isInQueue])
 
-  useEffect(() => {
-    // Start timeout monitoring when component mounts
-    QueueManager.startTimeoutMonitoring()
-    
-    // Load queue data
-    loadQueueData()
-    
-    // Set up periodic refresh for timeout info only when user is in queue
-    const timeoutInterval = setInterval(() => {
-      if (isInQueue && queuePosition !== null && queueSize > 0) {
-        updateTimeoutInfo()
-      }
-    }, 1000) // Update every second for countdown
 
-    // Cleanup function
-    return () => {
-      clearInterval(timeoutInterval)
-      QueueManager.stopTimeoutMonitoring()
-    }
-  }, [isInQueue, queuePosition, queueSize])
 
-  const loadQueueData = async () => {
+  const loadQueueData = useCallback(async () => {
     setLoading(true)
     
     try {
@@ -79,13 +60,10 @@ export default function QueuePage() {
       setQueueEntries(formattedQueue)
       setQueueSize(queueSize)
       
-      // Only load timeout information if user is in queue
-      if (isInQueue && queuePosition !== null) {
-        await updateTimeoutInfo()
-      } else {
-        // Clear timeout info if user is not in queue
-        setTimeoutInfos([])
-      }
+             // Clear timeout info if user is not in queue
+       if (!isInQueue || queuePosition === null) {
+         setTimeoutInfos([])
+       }
       
     } catch (error) {
       console.error('Error loading queue:', error)
@@ -93,9 +71,9 @@ export default function QueuePage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [isInQueue, queuePosition])
 
-  const updateTimeoutInfo = async () => {
+  const updateTimeoutInfo = useCallback(async () => {
     try {
       // Only update timeout info if there are actually people in the queue
       if (queueSize === 0) {
@@ -117,7 +95,29 @@ export default function QueuePage() {
     } catch (error) {
       console.error('Error updating timeout info:', error)
     }
-  }
+  }, [queueSize])
+
+  // Add useEffect hook after function declarations
+  useEffect(() => {
+    // Start timeout monitoring when component mounts
+    QueueManager.startTimeoutMonitoring()
+    
+    // Load queue data
+    loadQueueData()
+    
+    // Set up periodic refresh for timeout info only when user is in queue
+    const timeoutInterval = setInterval(() => {
+      if (isInQueue && queuePosition !== null && queueSize > 0) {
+        updateTimeoutInfo()
+      }
+    }, 1000) // Update every second for countdown
+
+    // Cleanup function
+    return () => {
+      clearInterval(timeoutInterval)
+      QueueManager.stopTimeoutMonitoring()
+    }
+  }, [isInQueue, queuePosition, queueSize, loadQueueData, updateTimeoutInfo])
 
   const formatTimeRemaining = (milliseconds: number): string => {
     const seconds = Math.ceil(milliseconds / 1000)
@@ -300,7 +300,7 @@ export default function QueuePage() {
                       Booking Timeout Warning
                     </p>
                     <p className="text-sm text-yellow-600">
-                      Users in positions 1-20 have 5 minutes to book. After that, they'll be removed from the queue.
+                                             Users in positions 1-20 have 5 minutes to book. After that, they&apos;ll be removed from the queue.
                     </p>
                     <div className="mt-2 space-y-1">
                       {timeoutInfos.slice(0, 3).map((timeout) => (

@@ -18,7 +18,7 @@ interface QRScannerProps {
 
 export default function QRScanner({ onScan, onError }: QRScannerProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const [isScanning, setIsScanning] = useState(false)
+
   const [cameras, setCameras] = useState<CameraDevice[]>([])
   const [selectedCamera, setSelectedCamera] = useState<string>('')
   const [isLoading, setIsLoading] = useState(false)
@@ -97,7 +97,7 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
         html5QrCodeRef.current = null
       }
     }
-    setIsScanning(false)
+
     setHasScanned(false)
   }, [])
 
@@ -149,7 +149,7 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
         }
       )
 
-      setIsScanning(true)
+  
       setCameraError('')
     } catch (error) {
       console.error('Failed to start scanner:', error)

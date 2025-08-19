@@ -30,7 +30,7 @@ export default function BusesPage() {
   const [showConfirmButton, setShowConfirmButton] = useState(false)
   const [pendingBusId, setPendingBusId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [loadingPassengers, setLoadingPassengers] = useState<Record<number, boolean>>({})
+
   const [pendingPassengers, setPendingPassengers] = useState<Record<number, Passenger[]>>({})
   const [userTimeoutInfo, setUserTimeoutInfo] = useState<TimeoutInfo | null>(null)
   const { currentUser, queuePosition, setQueuePosition } = useUser()
@@ -47,7 +47,7 @@ export default function BusesPage() {
     
     try {
       console.log(`Loading passengers for bus ${busId}...`)
-      setLoadingPassengers(prev => ({ ...prev, [busId]: true }))
+
       
       const { data: bookings, error } = await supabase
         .from('bookings')
@@ -92,41 +92,11 @@ export default function BusesPage() {
       console.error(`Unexpected error loading passengers for bus ${busId}:`, error)
       return []
     } finally {
-      setLoadingPassengers(prev => ({ ...prev, [busId]: false }))
+
     }
   }, [passengersByBus])
 
-  const checkDatabaseHealth = useCallback(async () => {
-    try {
-      // Test database connection and schema first
-      const { data: testData, error: testError } = await supabase
-        .from('buses')
-        .select('id')
-        .limit(1)
-      
-      if (testError) {
-        console.error('Database connection test failed:', testError)
-        throw new Error(`Database connection failed: ${testError.message}`)
-      }
-      
-      // Test bookings table access
-      const { data: bookingsTest, error: bookingsTestError } = await supabase
-        .from('bookings')
-        .select('id')
-        .limit(1)
-      
-      if (bookingsTestError) {
-        console.error('Bookings table access test failed:', bookingsTestError)
-        throw new Error(`Bookings table access failed: ${bookingsTestError.message}`)
-      }
-      
-      console.log('Database connection and schema validation successful')
-      return true
-    } catch (error) {
-      console.error('Database health check failed:', error)
-      return false
-    }
-  }, [])
+
 
   const checkBusCapacity = useCallback(async (busId: number) => {
     try {
@@ -153,10 +123,7 @@ export default function BusesPage() {
           : bus
       ))
       
-      // Also load the passenger details for display
-      if (currentPassengers > 0) {
-        loadPassengersForBus(busId)
-      }
+      // Note: Passenger details will be loaded separately when needed
       
       return currentPassengers
     } catch (error) {
@@ -170,8 +137,26 @@ export default function BusesPage() {
       console.log('Starting to load buses...')
       
       // Check database health first
-      const isHealthy = await checkDatabaseHealth()
-      if (!isHealthy) {
+      try {
+        const { error: testError } = await supabase
+          .from('buses')
+          .select('id')
+          .limit(1)
+        
+        if (testError) {
+          throw new Error(`Database connection failed: ${testError.message}`)
+        }
+        
+        // Test bookings table access
+        const { error: bookingsTestError } = await supabase
+          .from('bookings')
+          .select('id')
+          .limit(1)
+        
+        if (bookingsTestError) {
+          throw new Error(`Bookings table access failed: ${bookingsTestError.message}`)
+        }
+      } catch {
         throw new Error('Database is not accessible. Please check your connection.')
       }
       
