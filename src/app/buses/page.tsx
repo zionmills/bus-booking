@@ -34,20 +34,16 @@ export default function BusesPage() {
     changeBus,
     cancelBooking,
     addPendingPassenger,
-    removePendingPassenger,
-    clearPendingPassengers,
-    setError
+    clearPendingPassengers
   } = useBuses(currentUser?.id || null, currentUser?.name || null)
 
   const {
     queuePosition,
     userTimeoutInfo,
-    canBookBus,
-    isInBookingZone
+    canBookBus
   } = useQueue(currentUser?.id || null)
 
   const {
-    showConfirmButton,
     pendingBusId,
     handleBookBus,
     handleConfirmBooking,
@@ -216,7 +212,7 @@ export default function BusesPage() {
                 onBookBus={handleBusSelection}
                 onConfirmBooking={handleConfirmBookingAction}
                 onCancelSelection={clearPendingSelection}
-                onCancelBooking={handleCancelBookingAction}
+
                 onLoadPassengers={loadPassengersForBus}
               />
             )

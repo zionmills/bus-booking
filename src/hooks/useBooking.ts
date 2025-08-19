@@ -58,7 +58,7 @@ export function useBooking(
     }
   }, [currentUserId, currentUserName, canBookBus, queuePosition])
 
-  const handleConfirmBooking = useCallback(async (bookBus: (busId: number) => Promise<any>) => {
+  const handleConfirmBooking = useCallback(async (bookBus: (busId: number) => Promise<{ bus_id: number | null; created_at: string; id: number; user_id: number | null }>) => {
     if (!bookingState.pendingBusId || !currentUserId) return
     
     try {

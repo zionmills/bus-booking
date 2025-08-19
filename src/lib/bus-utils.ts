@@ -4,15 +4,7 @@ interface BusWithPassengers extends BusType {
   passengerCount: number
 }
 
-interface Passenger {
-  id: number
-  name: string
-}
 
-interface PendingPassenger {
-  id: number
-  name: string
-}
 
 export interface BusStatus {
   status: 'loading' | 'full' | 'almost-full' | 'moderate' | 'available' | 'unknown'

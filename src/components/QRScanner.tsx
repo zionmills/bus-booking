@@ -185,7 +185,7 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
       }
       stopScanner()
     }
-  }, [onScan, selectedCamera, onError, stopScanner])
+  }, [onScan, selectedCamera, onError, stopScanner, hasScanned, lastScanTime])
 
   useEffect(() => {
     if (isOpen) {

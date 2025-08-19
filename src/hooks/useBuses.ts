@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase, type Bus as BusType } from '@/lib/supabase'
 import { toast } from 'sonner'
-import { QueueManager, TimeoutInfo } from '@/lib/queue-manager'
+
 
 interface Passenger {
   id: number
@@ -172,7 +172,7 @@ export function useBuses(currentUserId: number | null, currentUserName: string |
           }))
           
           return { busId: bus.id, passengers, count: passengers.length }
-        } catch (error) {
+        } catch {
           return { busId: bus.id, passengers: [], count: 0 }
         }
       })

@@ -15,7 +15,15 @@ export function useQueue(currentUserId: number | null) {
 
     setLoading(true)
     try {
-      const position = await QueueManager.joinQueue(currentUserId)
+      const position = await QueueManager.addUserToQueue(currentUserId)
+      
+      // Validate the returned position
+      if (!Number.isFinite(position) || !Number.isInteger(position) || position <= 0) {
+        console.error('Unexpected response from QueueManager.addUserToQueue:', position)
+        toast.error('Invalid queue position received. Please try again.')
+        return false
+      }
+      
       setQueuePosition(position)
       toast.success(`Joined queue at position ${position}`)
       return true
@@ -59,10 +67,6 @@ export function useQueue(currentUserId: number | null) {
   }, [currentUserId])
 
   const canBookBus = useCallback(() => {
-    return queuePosition !== null && queuePosition <= 20
-  }, [queuePosition])
-
-  const isInBookingZone = useCallback(() => {
     return queuePosition !== null && queuePosition <= 20
   }, [queuePosition])
 
@@ -110,7 +114,6 @@ export function useQueue(currentUserId: number | null) {
     checkQueuePosition,
     
     // Computed values
-    canBookBus,
-    isInBookingZone
+    canBookBus
   }
 }

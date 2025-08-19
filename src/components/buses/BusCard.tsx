@@ -37,7 +37,7 @@ interface BusCardProps {
   onBookBus: (busId: number) => void
   onConfirmBooking: () => void
   onCancelSelection: () => void
-  onCancelBooking: () => void
+
   onLoadPassengers: (busId: number) => void
 }
 
@@ -52,7 +52,7 @@ export function BusCard({
   onBookBus,
   onConfirmBooking,
   onCancelSelection,
-  onCancelBooking,
+
   onLoadPassengers
 }: BusCardProps) {
   const pendingCount = pendingPassengers.length

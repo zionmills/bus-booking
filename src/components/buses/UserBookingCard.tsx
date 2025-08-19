@@ -3,11 +3,16 @@ import { Button } from '@/components/ui/button'
 import { CheckCircle, XCircle } from 'lucide-react'
 
 interface UserBookingCardProps {
-  userBooking: { busId: number; userName: string }
+  userBooking?: { busId: number; userName: string } | null
   onCancelBooking: () => void
 }
 
 export function UserBookingCard({ userBooking, onCancelBooking }: UserBookingCardProps) {
+  // Guard against null/undefined userBooking
+  if (!userBooking) {
+    return null
+  }
+
   return (
     <Card className="mb-8 border-green-200 bg-green-50">
       <CardContent className="pt-6">

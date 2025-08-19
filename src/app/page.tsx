@@ -271,6 +271,41 @@ export default function HomePage() {
   // Mobile-specific debouncing - memoized to maintain stable identity
   const debounceTime = useMemo(() => isMobile ? 1500 : 1000, [isMobile])
   
+  const handleExistingUser = useCallback(async (delegate: { id: number; name: string | null; qr_code: string | null; created_at: string }) => {
+    setCurrentUser(delegate)
+    
+    // Check if user is already in queue
+    let currentPosition = await QueueManager.getUserQueuePosition(delegate.id)
+    
+    if (currentPosition !== null && currentPosition !== undefined) {
+      // User is already in queue
+      setQueuePosition(currentPosition)
+      toast.info(`Welcome back! You're in the queue at position ${currentPosition}`)
+    } else {
+      // User is not in queue, add them automatically
+      try {
+        const isFull = await QueueManager.isQueueFull()
+        if (isFull) {
+          dispatch({ type: 'SET_ERROR', payload: 'Queue is currently full. Please try again later.' })
+          toast.error('Queue is currently full. Please try again later.')
+          return
+        }
+        
+        currentPosition = await QueueManager.addUserToQueue(delegate.id)
+        setQueuePosition(currentPosition)
+        toast.success(`Welcome! You've been added to the queue at position ${currentPosition}`)
+      } catch (error) {
+        console.error('Error adding user to queue:', error)
+        dispatch({ type: 'SET_ERROR', payload: 'Failed to add you to the queue. Please try again.' })
+        toast.error('Failed to add you to the queue. Please try again.')
+        return
+      }
+    }
+    
+    // Redirect to buses page using Next.js router
+    router.replace('/buses')
+  }, [router, setCurrentUser, setQueuePosition])
+  
   const handleQRScan = useCallback(async (scannedQR: string) => {
     const now = Date.now()
     
@@ -342,42 +377,7 @@ export default function HomePage() {
       dispatch({ type: 'SET_LOADING', payload: false })
       dispatch({ type: 'SET_PROCESSING_QR', payload: false })
     }
-  }, [state.isProcessingQR, state.isLoading, state.lastScanTime, state.processedQRs, debounceTime])
-  
-  const handleExistingUser = async (delegate: { id: number; name: string | null; qr_code: string | null; created_at: string }) => {
-    setCurrentUser(delegate)
-    
-    // Check if user is already in queue
-    let currentPosition = await QueueManager.getUserQueuePosition(delegate.id)
-    
-    if (currentPosition !== null && currentPosition !== undefined) {
-      // User is already in queue
-      setQueuePosition(currentPosition)
-      toast.info(`Welcome back! You're in the queue at position ${currentPosition}`)
-    } else {
-      // User is not in queue, add them automatically
-      try {
-        const isFull = await QueueManager.isQueueFull()
-        if (isFull) {
-          dispatch({ type: 'SET_ERROR', payload: 'Queue is currently full. Please try again later.' })
-          toast.error('Queue is currently full. Please try again later.')
-          return
-        }
-        
-        currentPosition = await QueueManager.addUserToQueue(delegate.id)
-        setQueuePosition(currentPosition)
-        toast.success(`Welcome! You've been added to the queue at position ${currentPosition}`)
-      } catch (error) {
-        console.error('Error adding user to queue:', error)
-        dispatch({ type: 'SET_ERROR', payload: 'Failed to add you to the queue. Please try again.' })
-        toast.error('Failed to add you to the queue. Please try again.')
-        return
-      }
-    }
-    
-    // Redirect to buses page using Next.js router
-    router.replace('/buses')
-  }
+  }, [state.isProcessingQR, state.isLoading, state.lastScanTime, state.processedQRs, debounceTime, handleExistingUser])
   
   const handleNameSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
