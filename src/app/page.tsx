@@ -9,10 +9,32 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { User, Users, Scan, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import QRScanner from '@/components/QRScanner'
 import { supabase } from '@/lib/supabase'
 import { useUser } from '@/contexts/UserContext'
 import { QueueManager } from '@/lib/queue-manager'
+
+// QR Code sanitizer function
+const sanitizeQRCode = (qrCode: string | undefined): string => {
+  if (!qrCode) return ''
+  
+  // Remove HTML tags and decode HTML entities
+  let sanitized = qrCode
+    .replace(/<[^>]*>/g, '') // Remove HTML tags
+    .replace(/&[a-zA-Z0-9#]+;/g, ' ') // Replace HTML entities with spaces
+    .trim()
+  
+  // Enforce max length
+  if (sanitized.length > 100) {
+    sanitized = sanitized.substring(0, 100)
+  }
+  
+  // Only allow alphanumeric, hyphens, underscores, and common URL-safe characters
+  sanitized = sanitized.replace(/[^a-zA-Z0-9\-_./:?=&%#]/g, '')
+  
+  return sanitized
+}
 
 // Types for better type safety
 interface UserData {
@@ -29,6 +51,7 @@ interface AppState {
   isProcessingQR: boolean
   lastScanTime: number
   processedQRs: Set<string>
+  manualQr: string
 }
 
 // Action types for the reducer
@@ -37,12 +60,13 @@ type AppAction =
   | { type: 'QR_SCANNED'; payload: string }
   | { type: 'START_REGISTRATION'; payload: string }
   | { type: 'UPDATE_USER_DATA'; payload: Partial<UserData> }
-  | { type: 'REGISTRATION_COMPLETE'; payload: { user: any; queuePosition: number } }
+  | { type: 'REGISTRATION_COMPLETE'; payload: { user: { id: number; name: string | null; qr_code: string | null; created_at: string }; queuePosition: number } }
   | { type: 'SET_ERROR'; payload: string }
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_PROCESSING_QR'; payload: boolean }
   | { type: 'RESET' }
   | { type: 'ADD_PROCESSED_QR'; payload: string }
+  | { type: 'UPDATE_MANUAL_QR'; payload: string }
 
 // Initial state
 const initialState: AppState = {
@@ -52,7 +76,8 @@ const initialState: AppState = {
   isLoading: false,
   isProcessingQR: false,
   lastScanTime: 0,
-  processedQRs: new Set()
+  processedQRs: new Set(),
+  manualQr: ''
 }
 
 // Reducer function for predictable state updates
@@ -64,7 +89,8 @@ function appReducer(state: AppState, action: AppAction): AppState {
         status: 'scanning',
         error: null,
         userData: null,
-        processedQRs: new Set()
+        processedQRs: new Set(),
+        manualQr: ''
       }
     
     case 'QR_SCANNED':
@@ -78,7 +104,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         status: 'registering',
         userData: {
-          qrCode: action.payload,
+          qrCode: sanitizeQRCode(action.payload),
           name: '',
           consent: false
         },
@@ -124,11 +150,15 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return initialState
     
     case 'ADD_PROCESSED_QR':
-      const newProcessedQRs = new Set(state.processedQRs)
-      newProcessedQRs.add(action.payload)
       return {
         ...state,
-        processedQRs: newProcessedQRs
+        processedQRs: new Set([...state.processedQRs, action.payload])
+      }
+    
+    case 'UPDATE_MANUAL_QR':
+      return {
+        ...state,
+        manualQr: action.payload
       }
     
     default:
@@ -156,26 +186,53 @@ const useMobileDetection = () => {
 const useStatePersistence = (state: AppState) => {
   useEffect(() => {
     if (state.status !== 'scanning') {
-      localStorage.setItem('bus-booking-state', JSON.stringify({
-        status: state.status,
-        userData: state.userData,
-        lastScanTime: state.lastScanTime
-      }))
+      try {
+        localStorage.setItem('bus-booking-state', JSON.stringify({
+          status: state.status,
+          userData: state.userData,
+          lastScanTime: state.lastScanTime,
+          savedAt: Date.now()
+        }))
+      } catch (error) {
+        console.error('Failed to save state to localStorage:', error)
+        // Safely return without crashing the app
+        return
+      }
     }
   }, [state.status, state.userData, state.lastScanTime])
   
   const restoreState = useCallback(() => {
-    const saved = localStorage.getItem('bus-booking-state')
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved)
-        return parsed
-      } catch (e) {
-        console.error('Failed to restore state:', e)
-        return null
+    try {
+      const saved = localStorage.getItem('bus-booking-state')
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved)
+          
+          // Check if saved state is older than 30 minutes
+          const savedAt = parsed.savedAt || 0
+          const now = Date.now()
+          const thirtyMinutes = 30 * 60 * 1000
+          
+          if (now - savedAt > thirtyMinutes) {
+            // State is too old, clear sensitive data
+            if (parsed.userData) {
+              delete parsed.userData.qrCode
+            }
+            // Skip START_REGISTRATION for old state
+            return null
+          }
+          
+          return parsed
+        } catch (e) {
+          console.error('Failed to parse saved state:', e)
+          return null
+        }
       }
+      return null
+    } catch (error) {
+      console.error('Failed to restore state from localStorage:', error)
+      return null
     }
-    return null
   }, [])
   
   return { restoreState }
@@ -186,6 +243,7 @@ export default function HomePage() {
   const { currentUser, setCurrentUser, queuePosition, setQueuePosition } = useUser()
   const isMobile = useMobileDetection()
   const { restoreState } = useStatePersistence(state)
+  const router = useRouter()
   
   // Restore state on mount
   useEffect(() => {
@@ -216,6 +274,13 @@ export default function HomePage() {
   const handleQRScan = useCallback(async (scannedQR: string) => {
     const now = Date.now()
     
+    // Sanitize the QR code before processing
+    const sanitizedQR = sanitizeQRCode(scannedQR)
+    if (!sanitizedQR) {
+      toast.error('Invalid QR code format')
+      return
+    }
+    
     // Prevent multiple simultaneous QR processing
     if (state.isProcessingQR || state.isLoading) {
       console.log('QR processing already in progress, ignoring new scan')
@@ -229,29 +294,29 @@ export default function HomePage() {
     }
     
     // Prevent processing the same QR code multiple times
-    if (state.processedQRs.has(scannedQR)) {
+    if (state.processedQRs.has(sanitizedQR)) {
       console.log('QR code already processed, ignoring duplicate scan')
       return
     }
     
-    dispatch({ type: 'QR_SCANNED', payload: scannedQR })
+    dispatch({ type: 'QR_SCANNED', payload: sanitizedQR })
     dispatch({ type: 'SET_PROCESSING_QR', payload: true })
     dispatch({ type: 'SET_LOADING', payload: true })
     
     try {
       // Check if delegate exists with this QR code
-      console.log('Checking for delegate with QR code:', scannedQR)
+      console.log('Checking for delegate with QR code:', sanitizedQR)
       const { data: delegate, error: delegateError } = await supabase
         .from('delegates')
         .select('*')
-        .eq('qr_code', scannedQR)
+        .eq('qr_code', sanitizedQR)
         .single()
       
       console.log('Delegate lookup result:', { delegate, delegateError })
       
       if (delegateError && delegateError.code === 'PGRST116') {
         // No delegate found, start registration
-        dispatch({ type: 'START_REGISTRATION', payload: scannedQR })
+        dispatch({ type: 'START_REGISTRATION', payload: sanitizedQR })
         toast.info('New QR code detected. Please enter your name to continue.')
       } else if (delegateError) {
         throw new Error(`Failed to check QR code: ${delegateError.message}`)
@@ -261,7 +326,7 @@ export default function HomePage() {
       }
       
       // Mark this QR code as processed
-      dispatch({ type: 'ADD_PROCESSED_QR', payload: scannedQR })
+      dispatch({ type: 'ADD_PROCESSED_QR', payload: sanitizedQR })
       
     } catch (error) {
       console.error('Error:', error)
@@ -272,15 +337,15 @@ export default function HomePage() {
       dispatch({ type: 'SET_LOADING', payload: false })
       dispatch({ type: 'SET_PROCESSING_QR', payload: false })
     }
-  }, [state.isProcessingQR, state.isLoading, state.lastScanTime, state.processedQRs])
+  }, [state.isProcessingQR, state.isLoading, state.lastScanTime, state.processedQRs, getDebounceTime])
   
-  const handleExistingUser = async (delegate: any) => {
+  const handleExistingUser = async (delegate: { id: number; name: string | null; qr_code: string | null; created_at: string }) => {
     setCurrentUser(delegate)
     
     // Check if user is already in queue
     let currentPosition = await QueueManager.getUserQueuePosition(delegate.id)
     
-    if (currentPosition) {
+    if (currentPosition !== null && currentPosition !== undefined) {
       // User is already in queue
       setQueuePosition(currentPosition)
       toast.info(`Welcome back! You're in the queue at position ${currentPosition}`)
@@ -305,8 +370,8 @@ export default function HomePage() {
       }
     }
     
-    // Redirect to buses page
-    window.location.href = '/buses'
+    // Redirect to buses page using Next.js router
+    router.replace('/buses')
   }
   
   const handleNameSubmit = async (e: React.FormEvent) => {
@@ -374,7 +439,7 @@ export default function HomePage() {
   }
   
   const handleManualQRSubmit = () => {
-    if (!state.userData?.qrCode?.trim() || state.isLoading || state.isProcessingQR) return
+    if (!state.manualQr?.trim() || state.isLoading || state.isProcessingQR) return
     
     // Additional mobile protection for manual submission
     if (isMobile) {
@@ -385,7 +450,14 @@ export default function HomePage() {
       }
     }
     
-    handleQRScan(state.userData.qrCode.trim())
+    // Sanitize the manual QR input before processing
+    const sanitizedQR = sanitizeQRCode(state.manualQr.trim())
+    if (!sanitizedQR) {
+      toast.error('Please enter a valid QR code')
+      return
+    }
+    
+    handleQRScan(sanitizedQR)
   }
   
   const resetToScanning = () => {
@@ -440,10 +512,10 @@ export default function HomePage() {
                     id="qr"
                     type="text"
                     placeholder="Enter QR code manually"
-                    value={state.userData?.qrCode || ''}
+                    value={state.manualQr}
                     onChange={(e) => dispatch({ 
-                      type: 'UPDATE_USER_DATA', 
-                      payload: { qrCode: e.target.value } 
+                      type: 'UPDATE_MANUAL_QR', 
+                      payload: e.target.value 
                     })}
                     className="text-lg"
                   />
@@ -453,7 +525,7 @@ export default function HomePage() {
                   onClick={handleManualQRSubmit}
                   className="w-full" 
                   size="lg"
-                  disabled={!state.userData?.qrCode?.trim() || state.isLoading || state.isProcessingQR}
+                  disabled={!state.manualQr?.trim() || state.isLoading || state.isProcessingQR}
                 >
                   {state.isLoading ? 'Processing...' : 'Continue'}
                 </Button>
@@ -600,7 +672,7 @@ export default function HomePage() {
             <div className="space-y-4">
               <div className="text-center p-4 bg-green-50 rounded-lg">
                 <p className="text-sm text-green-700">
-                  QR Code: <span className="font-mono font-bold">{currentUser?.qr_code || state.userData?.qrCode}</span>
+                  QR Code: <span className="font-mono font-bold">{sanitizeQRCode(currentUser?.qr_code || state.userData?.qrCode)}</span>
                 </p>
                 {queuePosition && (
                   <div className="mt-2">
