@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,11 +20,40 @@ export default function HomePage() {
   const [qrCode, setQrCode] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [consentGiven, setConsentGiven] = useState(false)
+  const [isProcessingQR, setIsProcessingQR] = useState(false) // Add flag to prevent multiple QR processing
+  const [processedQRs, setProcessedQRs] = useState<Set<string>>(new Set()) // Track processed QR codes
   const { currentUser, setCurrentUser, queuePosition, setQueuePosition } = useUser()
 
-
+  // Reset processing state when step changes
+  useEffect(() => {
+    if (step !== 'qr') {
+      setIsProcessingQR(false)
+    } else {
+      // Reset processed QR codes when back to scanning step
+      setProcessedQRs(new Set())
+    }
+  }, [step])
 
   const handleQRScan = async (scannedQR: string) => {
+    // Prevent multiple simultaneous QR processing
+    if (isProcessingQR || isLoading) {
+      console.log('QR processing already in progress, ignoring new scan')
+      return
+    }
+    
+    // Prevent processing the same QR code multiple times
+    if (processedQRs.has(scannedQR)) {
+      console.log('QR code already processed, ignoring duplicate scan')
+      return
+    }
+    
+    // Prevent processing the same QR code multiple times in the same session
+    if (qrCode === scannedQR && step !== 'qr') {
+      console.log('Same QR code already processed in this session, ignoring duplicate scan')
+      return
+    }
+    
+    setIsProcessingQR(true)
     setQrCode(scannedQR)
     setIsLoading(true)
     
@@ -81,6 +110,9 @@ export default function HomePage() {
         window.location.href = '/buses'
       }
       
+      // Mark this QR code as processed to prevent duplicate queries
+      setProcessedQRs(prev => new Set(prev).add(scannedQR))
+      
     } catch (error) {
       console.error('Error:', error)
       if (error instanceof Error) {
@@ -90,6 +122,7 @@ export default function HomePage() {
       }
     } finally {
       setIsLoading(false)
+      setIsProcessingQR(false)
     }
   }
 
@@ -154,6 +187,11 @@ export default function HomePage() {
     }
   }
 
+  const handleManualQRSubmit = () => {
+    if (!qrCode.trim() || isLoading || isProcessingQR || processedQRs.has(qrCode.trim())) return
+    handleQRScan(qrCode.trim())
+  }
+
   if (step === 'qr') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 relative">
@@ -210,10 +248,10 @@ export default function HomePage() {
                 </div>
                 
                 <Button 
-                  onClick={() => handleQRScan(qrCode)}
+                  onClick={handleManualQRSubmit}
                   className="w-full" 
                   size="lg"
-                  disabled={!qrCode.trim() || isLoading}
+                  disabled={!qrCode.trim() || isLoading || isProcessingQR}
                 >
                   {isLoading ? 'Processing...' : 'Continue'}
                 </Button>

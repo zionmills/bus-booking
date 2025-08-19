@@ -102,7 +102,7 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
   }, [])
 
   const startScanner = useCallback(async (cameraId?: string) => {
-    if (!scannerContainerRef.current) return
+    if (!scannerContainerRef.current || hasScanned) return
 
     try {
       // Ensure clean stop of previous scanner
@@ -170,12 +170,16 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
       }
       stopScanner()
     }
-  }, [onScan, selectedCamera, onError, stopScanner, hasScanned])
+  }, [onScan, selectedCamera, onError, stopScanner])
 
   useEffect(() => {
     if (isOpen) {
       setHasScanned(false)
       getAvailableCameras()
+    } else {
+      // Reset scanning state when dialog closes
+      setHasScanned(false)
+      stopScanner()
     }
 
     return () => {
@@ -183,15 +187,22 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
     }
   }, [isOpen, getAvailableCameras, stopScanner])
 
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      stopScanner()
+    }
+  }, [stopScanner])
+
   // Start scanner when cameras are loaded and selected
   useEffect(() => {
-    if (cameras.length > 0 && selectedCamera && isOpen) {
+    if (cameras.length > 0 && selectedCamera && isOpen && !hasScanned && !isLoading) {
       startScanner(selectedCamera)
     }
-  }, [cameras, selectedCamera, isOpen, startScanner])
+  }, [cameras, selectedCamera, isOpen, startScanner, hasScanned, isLoading])
 
   const handleCameraChange = useCallback((cameraId: string) => {
-    if (cameraId === selectedCamera) return // Don't switch if same camera
+    if (cameraId === selectedCamera || hasScanned || isLoading) return // Don't switch if same camera, scan completed, or loading
     
     setSelectedCamera(cameraId)
     setHasScanned(false)
@@ -211,9 +222,11 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
     
     // Small delay to ensure cleanup, then start new scanner
     setTimeout(() => {
-      startScanner(cameraId)
+      if (!hasScanned && !isLoading) {
+        startScanner(cameraId)
+      }
     }, 150)
-  }, [selectedCamera, startScanner])
+  }, [selectedCamera, startScanner, hasScanned, isLoading])
 
   const handleRefreshCameras = useCallback(async () => {
     // Stop scanner first to clean up properly
@@ -237,6 +250,10 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
     setPermissionError('')
     setCameraError('')
     setHasScanned(false)
+    setIsLoading(false)
+    // Reset camera state to prevent issues on next open
+    setCameras([])
+    setSelectedCamera('')
   }, [stopScanner])
 
   return (
