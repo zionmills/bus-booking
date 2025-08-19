@@ -318,6 +318,11 @@ export default function HomePage() {
         // No delegate found, start registration
         dispatch({ type: 'START_REGISTRATION', payload: sanitizedQR })
         toast.info('New QR code detected. Please enter your name to continue.')
+        
+        // Refresh the page after a short delay to ensure clean state for registration
+        setTimeout(() => {
+          window.location.reload()
+        }, 500)
       } else if (delegateError) {
         throw new Error(`Failed to check QR code: ${delegateError.message}`)
       } else if (delegate) {
