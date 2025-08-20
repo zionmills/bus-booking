@@ -62,6 +62,32 @@ export default function QRScanner({ onScan, onError }: QRScannerProps) {
         label: device.label || `Camera ${device.deviceId.slice(0, 8)}...`
       }))
       
+      // Sort cameras to prioritize back camera on mobile devices
+      if (isMobile() && cameraList.length > 1) {
+        cameraList.sort((a, b) => {
+          const aLabel = a.label.toLowerCase()
+          const bLabel = b.label.toLowerCase()
+          
+          // Back camera indicators
+          const backIndicators = ['back', 'rear', 'environment', 'world-facing', 'outdoor']
+          const frontIndicators = ['front', 'user-facing', 'selfie', 'indoor']
+          
+          const aIsBack = backIndicators.some(indicator => aLabel.includes(indicator))
+          const bIsBack = backIndicators.some(indicator => bLabel.includes(indicator))
+          const aIsFront = frontIndicators.some(indicator => aLabel.includes(indicator))
+          const bIsFront = frontIndicators.some(indicator => bLabel.includes(indicator))
+          
+          // Prioritize back camera, then front camera, then others
+          if (aIsBack && !bIsBack) return -1
+          if (!aIsBack && bIsBack) return 1
+          if (aIsFront && !bIsFront) return 1
+          if (!aIsFront && bIsFront) return -1
+          
+          // If both are back or both are front, maintain original order
+          return 0
+        })
+      }
+      
       setCameras(cameraList)
       
       if (cameraList.length > 0) {
