@@ -100,7 +100,8 @@ export function BusCard({
           onClick={() => onBookBus(bus.id)}
         >
           {isFull ? 'Full' : 
-           !canBookBus ? 'Join Queue First' : 'Select This Bus'}
+           !canBookBus ? 'Join Queue First' : 
+           userBooking ? 'Change to This Bus' : 'Select This Bus'}
         </Button>
         {!canBookBus && (
           <div className="text-xs text-center text-gray-500 bg-gray-100 px-2 py-1 rounded">

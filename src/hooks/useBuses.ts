@@ -324,6 +324,66 @@ export function useBuses(currentUserId: number | null, currentUserName: string |
     }
   }, [currentUserId, currentUserName, userBooking, buses, checkBusCapacity, loadPassengersForBus])
 
+  const changeBusWithConfirmation = useCallback(async (newBusId: number, queuePosition: number | null) => {
+    if (!currentUserId || !currentUserName || !userBooking) {
+      throw new Error('Invalid booking state')
+    }
+
+    try {
+      const currentPassengers = await checkBusCapacity(newBusId)
+      const selectedBus = buses.find(bus => bus.id === newBusId)
+      
+      if (selectedBus && selectedBus.capacity !== null && currentPassengers >= selectedBus.capacity) {
+        throw new Error('The new bus is full. Please select another bus.')
+      }
+      
+      // Update the existing booking
+      const { error: updateError } = await supabase
+        .from('bookings')
+        .update({ bus_id: newBusId })
+        .eq('user_id', currentUserId)
+        .eq('bus_id', userBooking.busId)
+      
+      if (updateError) throw updateError
+      
+      // Remove user from queue after successful rebooking
+      if (queuePosition !== null) {
+        try {
+          const { QueueManager } = await import('@/lib/queue-manager')
+          await QueueManager.removeUserFromQueue(currentUserId)
+        } catch (error) {
+          console.error('Error removing from queue after rebooking:', error)
+          // Continue even if queue removal fails
+        }
+      }
+      
+      // Update local state
+      setBuses(prev => prev.map(bus => {
+        if (bus.id === userBooking.busId) {
+          return { ...bus, passengerCount: bus.passengerCount - 1 }
+        }
+        if (bus.id === newBusId) {
+          return { ...bus, passengerCount: bus.passengerCount + 1 }
+        }
+        return bus
+      }))
+      
+      setUserBooking({ busId: newBusId, userName: currentUserName })
+      
+      // Refresh passengers for both buses
+      await Promise.all([
+        loadPassengersForBus(userBooking.busId),
+        loadPassengersForBus(newBusId)
+      ])
+      
+      return true // Success flag for redirection
+      
+    } catch (error) {
+      console.error('Error changing bus:', error)
+      throw error
+    }
+  }, [currentUserId, currentUserName, userBooking, buses, checkBusCapacity, loadPassengersForBus])
+
   const cancelBooking = useCallback(async () => {
     if (!currentUserId || !userBooking) return
     
@@ -416,6 +476,7 @@ export function useBuses(currentUserId: number | null, currentUserName: string |
     loadPassengersForBus,
     bookBus,
     changeBus,
+    changeBusWithConfirmation,
     cancelBooking,
     addPendingPassenger,
     removePendingPassenger,
