@@ -302,9 +302,9 @@ export default function HomePage() {
       }
     }
     
-    // Redirect to buses page using Next.js router
-    router.replace('/buses')
-  }, [router, setCurrentUser, setQueuePosition])
+    // Redirect to buses page with full page refresh to ensure clean state
+    window.location.href = '/buses'
+  }, [setCurrentUser, setQueuePosition])
   
   const handleQRScan = useCallback(async (scannedQR: string) => {
     const now = Date.now()
