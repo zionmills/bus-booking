@@ -9,7 +9,6 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { User, Users, Scan, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import QRScanner from '@/components/QRScanner'
 import { supabase } from '@/lib/supabase'
 import { useUser } from '@/contexts/UserContext'
@@ -243,7 +242,6 @@ export default function HomePage() {
   const { currentUser, setCurrentUser, queuePosition, setQueuePosition } = useUser()
   const isMobile = useMobileDetection()
   const { restoreState } = useStatePersistence(state)
-  const router = useRouter()
   
   // Restore state on mount
   useEffect(() => {

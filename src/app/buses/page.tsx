@@ -37,7 +37,6 @@ export default function BusesPage() {
     loadBuses,
     loadPassengersForBus,
     bookBus,
-    changeBus,
     changeBusWithConfirmation,
     cancelBooking,
     addPendingPassenger,
@@ -224,7 +223,7 @@ export default function BusesPage() {
                   Confirm Bus Change
                 </h3>
                 <p className="text-blue-700 mb-4">
-                  You're about to change from Bus {userBooking?.busId} to Bus {rebookingBusId}. 
+                  You&apos;re about to change from Bus {userBooking?.busId} to Bus {rebookingBusId}. 
                   This will remove you from the queue and confirm your new bus selection.
                 </p>
                 <div className="flex space-x-3">
