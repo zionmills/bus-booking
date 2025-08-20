@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import { QRScannerContainer } from '@/components/home/QRScannerContainer'
 import { useStatePersistence } from '@/components/home/useStatePersistence'
-import { appReducer, initialState } from '@/components/home/types'
+import { initialState } from '@/components/home/types'
 
 export default function HomePage() {
   const { restoreState } = useStatePersistence(initialState)
@@ -14,7 +14,7 @@ export default function HomePage() {
     if (savedState) {
       if (savedState.status === 'registering' && savedState.userData) {
         // Restore form data
-        Object.entries(savedState.userData).forEach(([key, value]) => {
+        Object.entries(savedState.userData).forEach(([key]) => {
           if (key !== 'qrCode') {
             // This will be handled by the QRScannerContainer
           }

@@ -1,17 +1,19 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Bus, Ticket, Users } from 'lucide-react'
 import Link from 'next/link'
+import type { Delegate } from '@/lib/supabase'
+import { UserBooking } from './types'
 
 interface UserBookingCardProps {
-  currentUser: any
-  existingBooking: any
+  currentUser: Delegate
+  existingBooking: UserBooking | null
   checkingBooking: boolean
   queuePosition: number | null
   onRefreshUserInfo: () => void
   onJoinQueue: () => void
-  onSwitchUser: () => void
 }
 
 export function UserBookingCard({
@@ -20,9 +22,10 @@ export function UserBookingCard({
   checkingBooking,
   queuePosition,
   onRefreshUserInfo,
-  onJoinQueue,
-  onSwitchUser
+  onJoinQueue
 }: UserBookingCardProps) {
+  const router = useRouter()
+  
   return (
     <div className="mb-4 p-4 bg-green-50 rounded-lg border border-green-200">
       <div className="flex items-center justify-between mb-3">
@@ -71,7 +74,7 @@ export function UserBookingCard({
           <div className="text-sm text-green-700">
             {queuePosition ? (
               <>
-                <p>You're in the queue at position <strong>{queuePosition}</strong></p>
+                <p>You&apos;re in the queue at position <strong>{queuePosition}</strong></p>
                 {queuePosition <= 20 ? (
                   <p className="text-xs text-green-600 mt-1">🎉 You can book a bus now!</p>
                 ) : (
@@ -80,8 +83,8 @@ export function UserBookingCard({
               </>
             ) : (
               <>
-                <p>You don't have an active booking yet.</p>
-                <p className="text-xs text-green-600 mt-1">Join the queue to book a bus when it's your turn.</p>
+                <p>You don&apos;t have an active booking yet.</p>
+                <p className="text-xs text-green-600 mt-1">Join the queue to book a bus when it&apos;s your turn.</p>
               </>
             )}
           </div>
@@ -105,7 +108,7 @@ export function UserBookingCard({
               <Button 
                 size="sm" 
                 className="flex-1 bg-blue-600 hover:bg-blue-700"
-                onClick={() => window.location.href = '/buses'}
+                onClick={() => router.push('/buses')}
               >
                 <Users className="w-4 h-4 mr-2" />
                 Go to Buses

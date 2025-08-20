@@ -6,10 +6,11 @@ import { Users } from 'lucide-react'
 import Link from 'next/link'
 import { UserData } from './types'
 import { sanitizeQRCode } from './utils'
+import type { Delegate } from '@/lib/supabase'
 
 interface ReadyViewProps {
   userData: UserData | null
-  currentUser: any
+  currentUser: Delegate | null
   queuePosition: number | null
   onBack: () => void
 }
@@ -51,11 +52,11 @@ export function ReadyView({ userData, currentUser, queuePosition, onBack }: Read
                   </div>
                 )}
               </div>
-              <Link href="/buses" className="w-full">
-                <Button className="w-full" size="lg">
+              <Button asChild className="w-full" size="lg">
+                <Link href="/buses">
                   Select Your Bus
-                </Button>
-              </Link>
+                </Link>
+              </Button>
               <Button
                 variant="outline"
                 onClick={onBack}

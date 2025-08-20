@@ -1,25 +1,21 @@
 'use client'
 
-import { useState, useEffect, useReducer, useCallback, useMemo } from 'react'
+import { useState, useEffect, useReducer, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { useUser } from '@/contexts/UserContext'
 import { QueueManager } from '@/lib/queue-manager'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
-import { appReducer, initialState, AppState, AppAction } from './types'
+import { appReducer, initialState, UserBooking } from './types'
 import { sanitizeQRCode } from './utils'
 import { ScanningView } from './ScanningView'
 import { RegistrationView } from './RegistrationView'
 import { ErrorView } from './ErrorView'
 import { ReadyView } from './ReadyView'
-
-interface UserBooking {
-  id: number
-  bus_id: number | null
-  user_id: number | null
-  created_at: string
-}
+import type { Delegate } from '@/lib/supabase'
 
 export function QRScannerContainer() {
+  const router = useRouter()
   const [state, dispatch] = useReducer(appReducer, initialState)
   const { currentUser, setCurrentUser, queuePosition, setQueuePosition } = useUser()
   const [existingBooking, setExistingBooking] = useState<UserBooking | null>(null)
@@ -108,7 +104,7 @@ export function QRScannerContainer() {
     }
   }, [currentUser, setQueuePosition])
   
-  const handleExistingUser = useCallback(async (delegate: { id: number; name: string | null; qr_code: string | null; created_at: string }) => {
+  const handleExistingUser = useCallback(async (delegate: Delegate) => {
     setCurrentUser(delegate)
     
     let currentPosition = await QueueManager.getUserQueuePosition(delegate.id)
@@ -136,8 +132,8 @@ export function QRScannerContainer() {
       }
     }
     
-    window.location.href = '/buses'
-  }, [setCurrentUser, setQueuePosition])
+    router.push('/buses')
+  }, [setCurrentUser, setQueuePosition, router])
   
   const handleQRScan = useCallback(async (scannedQR: string) => {
     const now = Date.now()
@@ -178,9 +174,9 @@ export function QRScannerContainer() {
         dispatch({ type: 'START_REGISTRATION', payload: sanitizedQR })
         toast.info('New QR code detected. Please enter your name to continue.')
         
-        setTimeout(() => {
-          window.location.reload()
-        }, 500)
+        // Remove the setTimeout(window.location.reload()) pattern
+        // The component will naturally transition to registration view
+        // No need to reload the page
       } else if (delegateError) {
         throw new Error(`Failed to check QR code: ${delegateError.message}`)
       } else if (delegate) {

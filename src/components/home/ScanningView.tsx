@@ -9,10 +9,12 @@ import Link from 'next/link'
 import QRScanner from '@/components/QRScanner'
 import { QueueStatusBanner } from './QueueStatusBanner'
 import { UserBookingCard } from './UserBookingCard'
+import type { Delegate } from '@/lib/supabase'
+import { UserBooking } from './types'
 
 interface ScanningViewProps {
-  currentUser: any
-  existingBooking: any
+  currentUser: Delegate | null
+  existingBooking: UserBooking | null
   checkingBooking: boolean
   queuePosition: number | null
   manualQr: string
@@ -56,7 +58,6 @@ export function ScanningView({
             queuePosition={queuePosition}
             onRefreshUserInfo={onRefreshUserInfo}
             onJoinQueue={onJoinQueue}
-            onSwitchUser={onSwitchUser}
           />
         )}
         
@@ -114,9 +115,9 @@ export function ScanningView({
               <CardTitle className="text-2xl">Welcome back, {currentUser.name}!</CardTitle>
               <CardDescription>
                 {existingBooking 
-                  ? `You're booked on Bus ${existingBooking.bus_id}` 
+                  ? `You&apos;re booked on Bus ${existingBooking.bus_id}` 
                   : queuePosition 
-                    ? `You're in the queue at position ${queuePosition}` 
+                    ? `You&apos;re in the queue at position ${queuePosition}` 
                     : 'Ready to join the queue and book a bus'
                 }
               </CardDescription>
@@ -173,7 +174,7 @@ export function ScanningView({
                   <div className="text-center space-y-4">
                     <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
                       <p className="text-blue-700 font-medium">Ready to join the queue?</p>
-                      <p className="text-sm text-blue-600 mt-1">Join the queue to book a bus when it's your turn</p>
+                      <p className="text-sm text-blue-600 mt-1">Join the queue to book a bus when it&apos;s your turn</p>
                     </div>
                     <div className="flex space-x-2">
                       <Link href="/buses" className="flex-1">
