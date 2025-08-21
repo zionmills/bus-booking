@@ -10,7 +10,6 @@ import { useRouter } from 'next/navigation'
 import { useBuses } from '@/hooks/useBuses'
 import { useQueue } from '@/hooks/useQueue'
 import { useBooking } from '@/hooks/useBooking'
-import { TimeoutWarningBanner } from '@/components/buses/TimeoutWarningBanner'
 import { BookingEligibilitySummary } from '@/components/buses/BookingEligibilitySummary'
 import { QueueStatusBanner } from '@/components/buses/QueueStatusBanner'
 import { UserBookingCard } from '@/components/buses/UserBookingCard'
@@ -80,6 +79,11 @@ export default function BusesPage() {
     handleBookBus(busId)
   }
 
+  // Handle change bus action
+  const handleChangeBus = () => {
+    toast.info('Click on any other bus to change your selection')
+  }
+
   // Handle rebooking confirmation
   const handleRebookingConfirm = async () => {
     if (!rebookingBusId) return
@@ -112,18 +116,6 @@ export default function BusesPage() {
   const handleConfirmBookingAction = async () => {
     if (pendingBusId) {
       await handleConfirmBooking(bookBus)
-    }
-  }
-
-  // Handle booking cancellation
-  const handleCancelBookingAction = async () => {
-    try {
-      toast.loading('Cancelling your booking...')
-      await cancelBooking()
-      toast.success('Booking cancelled successfully!')
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to cancel booking'
-      toast.error(errorMessage)
     }
   }
 
@@ -194,9 +186,6 @@ export default function BusesPage() {
           </Link>
         </div>
 
-        {/* Timeout Warning Banner */}
-        <TimeoutWarningBanner userTimeoutInfo={userTimeoutInfo} />
-
         {/* Error Display */}
         <ErrorDisplay error={error} onRetry={loadBuses} />
 
@@ -250,7 +239,7 @@ export default function BusesPage() {
         {userBooking && (
           <UserBookingCard 
             userBooking={userBooking} 
-            onCancelBooking={handleCancelBookingAction} 
+            onChangeBus={handleChangeBus} 
           />
         )}
 

@@ -1,7 +1,9 @@
 import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { CheckCircle, Timer } from 'lucide-react'
 import { TimeoutInfo } from '@/lib/queue-manager'
 import { formatTimeRemaining, getTimeoutWarningColor } from '@/lib/bus-utils'
+import Link from 'next/link'
 
 interface BookingEligibilitySummaryProps {
   queuePosition: number | null
@@ -15,11 +17,12 @@ export function BookingEligibilitySummary({
   const getStatusInfo = () => {
     if (queuePosition === null) {
       return {
-        icon: <span className="text-sm font-bold">?</span>,
+        icon: <span className="text-sm font-bold">!</span>,
         iconBg: 'bg-blue-100 text-blue-600',
-        title: 'Not in Queue',
-        description: 'Join the queue to start booking buses',
-        position: 'N/A'
+        title: 'Join the Queue First',
+        description: 'You need to join the queue before you can book a bus',
+        position: 'N/A',
+        showJoinButton: true
       }
     }
     
@@ -29,7 +32,8 @@ export function BookingEligibilitySummary({
         iconBg: 'bg-green-100 text-green-600',
         title: 'Eligible to Book',
         description: `You are in position ${queuePosition} and can book a bus`,
-        position: queuePosition.toString()
+        position: queuePosition.toString(),
+        showJoinButton: false
       }
     }
     
@@ -38,7 +42,8 @@ export function BookingEligibilitySummary({
       iconBg: 'bg-orange-100 text-orange-600',
       title: 'Not Eligible to Book',
       description: `You are in position ${queuePosition} and need to be in the top 20 to book`,
-      position: queuePosition.toString()
+      position: queuePosition.toString(),
+      showJoinButton: false
     }
   }
 
@@ -70,19 +75,29 @@ export function BookingEligibilitySummary({
               )}
             </div>
           </div>
-          <div className="text-right">
-            <div className="text-2xl font-bold text-gray-800">
-              {statusInfo.position}
-            </div>
-            <div className="text-xs text-gray-500">Queue Position</div>
-            {/* Timeout countdown for users in booking zone */}
-            {userTimeoutInfo && userTimeoutInfo.isInBookingZone && (
-              <div className="mt-2">
-                <div className={`text-lg font-bold ${getTimeoutWarningColor(userTimeoutInfo.timeRemaining)}`}>
-                  {formatTimeRemaining(userTimeoutInfo.timeRemaining)}
-                </div>
-                <div className="text-xs text-yellow-600">Time Left</div>
+          <div className="flex items-center space-x-4">
+            <div className="text-right">
+              <div className="text-2xl font-bold text-gray-800">
+                {statusInfo.position}
               </div>
+              <div className="text-xs text-gray-500">Queue Position</div>
+              {/* Timeout countdown for users in booking zone */}
+              {userTimeoutInfo && userTimeoutInfo.isInBookingZone && (
+                <div className="mt-2">
+                  <div className={`text-lg font-bold ${getTimeoutWarningColor(userTimeoutInfo.timeRemaining)}`}>
+                    {formatTimeRemaining(userTimeoutInfo.timeRemaining)}
+                  </div>
+                  <div className="text-xs text-yellow-600">Time Left</div>
+                </div>
+              )}
+            </div>
+            {/* Join Queue Button - only show when not in queue */}
+            {statusInfo.showJoinButton && (
+              <Link href="/queue">
+                <Button size="sm" className="bg-blue-600 hover:bg-blue-700">
+                  Join Queue
+                </Button>
+              </Link>
             )}
           </div>
         </div>

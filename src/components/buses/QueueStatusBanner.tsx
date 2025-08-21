@@ -8,33 +8,9 @@ interface QueueStatusBannerProps {
 }
 
 export function QueueStatusBanner({ queuePosition }: QueueStatusBannerProps) {
+  // Only show this banner when user is in the queue
   if (queuePosition === null) {
-    return (
-      <Card className="mb-8 border-2 border-blue-200 bg-blue-50">
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="w-6 h-6 rounded-full flex items-center justify-center bg-blue-100 text-blue-600">
-                <span className="text-xs font-bold">!</span>
-              </div>
-              <div>
-                <p className="font-semibold text-blue-800">
-                  Join the Queue First
-                </p>
-                <p className="text-sm text-blue-600">
-                  You need to join the queue before you can book a bus
-                </p>
-              </div>
-            </div>
-            <Link href="/queue">
-              <Button size="sm">
-                Join Queue
-              </Button>
-            </Link>
-          </div>
-        </CardContent>
-      </Card>
-    )
+    return null
   }
 
   const isEligible = queuePosition <= 20

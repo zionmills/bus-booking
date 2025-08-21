@@ -1,13 +1,13 @@
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { CheckCircle, XCircle } from 'lucide-react'
+import { CheckCircle, RefreshCw } from 'lucide-react'
 
 interface UserBookingCardProps {
   userBooking?: { busId: number; userName: string } | null
-  onCancelBooking: () => void
+  onChangeBus: () => void
 }
 
-export function UserBookingCard({ userBooking, onCancelBooking }: UserBookingCardProps) {
+export function UserBookingCard({ userBooking, onChangeBus }: UserBookingCardProps) {
   // Guard against null/undefined userBooking
   if (!userBooking) {
     return null
@@ -31,10 +31,10 @@ export function UserBookingCard({ userBooking, onCancelBooking }: UserBookingCar
           <Button
             variant="outline"
             size="sm"
-            onClick={onCancelBooking}
+            onClick={onChangeBus}
           >
-            <XCircle className="w-4 h-4 mr-2" />
-            Cancel
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Change Bus
           </Button>
         </div>
       </CardContent>

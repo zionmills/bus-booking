@@ -92,25 +92,28 @@ export function BusCard({
       )
     }
 
-    return (
-      <div className="space-y-2">
-        <Button
-          className="w-full"
-          disabled={isFull || !canBookBus}
-          onClick={() => onBookBus(bus.id)}
-        >
-          {isFull ? 'Full' : 
-           !canBookBus ? 'Join Queue First' : 
-           userBooking ? 'Change to This Bus' : 'Select This Bus'}
-        </Button>
-        {!canBookBus && (
-          <div className="text-xs text-center text-gray-500 bg-gray-100 px-2 py-1 rounded">
+    // Only show booking button if user can book (in queue and eligible)
+    if (!canBookBus) {
+      return (
+        <div className="text-center py-4">
+          <div className="text-sm text-gray-500 bg-gray-100 px-3 py-2 rounded">
             {queuePosition === null 
               ? 'Join queue to book buses' 
               : `Need position 1-20, currently ${queuePosition}`}
           </div>
-        )}
-      </div>
+        </div>
+      )
+    }
+
+    return (
+      <Button
+        className="w-full"
+        disabled={isFull}
+        onClick={() => onBookBus(bus.id)}
+      >
+        {isFull ? 'Full' : 
+         userBooking ? 'Change to This Bus' : 'Select This Bus'}
+      </Button>
     )
   }
 
@@ -118,7 +121,7 @@ export function BusCard({
     <Card 
       className={`transition-all duration-200 hover:shadow-lg cursor-pointer ${
         isBooked ? 'ring-2 ring-green-500 bg-green-50' : 
-        !canBookBus ? 'ring-2 ring-gray-300 bg-gray-50' : ''
+        !canBookBus ? 'ring-2 ring-gray-300 bg-gray-50 opacity-75' : ''
       }`}
       onClick={handleCardClick}
     >
