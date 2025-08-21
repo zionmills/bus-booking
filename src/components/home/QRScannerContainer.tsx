@@ -107,6 +107,29 @@ export function QRScannerContainer() {
   const handleExistingUser = useCallback(async (delegate: Delegate) => {
     setCurrentUser(delegate)
     
+    // Check if user already has a booking
+    try {
+      const { data: existingBooking, error: bookingError } = await supabase
+        .from('bookings')
+        .select('*')
+        .eq('user_id', delegate.id)
+        .single()
+      
+      if (bookingError && bookingError.code !== 'PGRST116') {
+        console.error('Error checking existing booking:', bookingError)
+      }
+      
+      // If user has a booking, redirect to confirmation page
+      if (existingBooking) {
+        toast.info('Welcome back! You already have a confirmed booking.')
+        router.push('/booking-confirmation')
+        return
+      }
+    } catch (error) {
+      console.error('Error checking existing booking:', error)
+    }
+    
+    // If no existing booking, proceed with queue logic
     let currentPosition = await QueueManager.getUserQueuePosition(delegate.id)
     
     if (currentPosition !== null && currentPosition !== undefined) {
