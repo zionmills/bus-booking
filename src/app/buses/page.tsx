@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
@@ -21,9 +21,7 @@ export default function BusesPage() {
   const { currentUser } = useUser()
   const router = useRouter()
   
-  // State for rebooking confirmation
-  const [rebookingBusId, setRebookingBusId] = useState<number | null>(null)
-  const [showRebookingConfirm, setShowRebookingConfirm] = useState(false)
+  // Remove rebooking-specific state since we'll use the same pending mechanism
   
   // Custom hooks for different concerns
   const {
@@ -61,19 +59,13 @@ export default function BusesPage() {
     () => {
       // Callback when booking is successful
       clearPendingPassengers()
-    }
+    },
+    userBooking
   )
 
   // Handle bus selection with pending passenger logic
   const handleBusSelection = async (busId: number) => {
-    if (userBooking) {
-      // User already has a booking, show confirmation dialog for rebooking
-      setRebookingBusId(busId)
-      setShowRebookingConfirm(true)
-      return
-    }
-
-    // Add pending passenger and show confirm button
+    // For both initial booking and rebooking, use the same pending state mechanism
     addPendingPassenger(busId)
     handleBookBus(busId)
   }
@@ -83,38 +75,28 @@ export default function BusesPage() {
     toast.info('Click on any other bus to change your selection')
   }
 
-  // Handle rebooking confirmation
-  const handleRebookingConfirm = async () => {
-    if (!rebookingBusId) return
-    
-    try {
-      toast.loading('Changing your bus...')
-      const success = await changeBusWithConfirmation(rebookingBusId, queuePosition)
-      
-      if (success) {
-        toast.success('Successfully changed bus!')
-        // Redirect to confirmation page after successful rebooking
-        router.push('/booking-confirmation')
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to change bus'
-      toast.error(errorMessage)
-    } finally {
-      setShowRebookingConfirm(false)
-      setRebookingBusId(null)
-    }
-  }
-
-  // Handle rebooking cancellation
-  const handleRebookingCancel = () => {
-    setShowRebookingConfirm(false)
-    setRebookingBusId(null)
-  }
-
-  // Handle booking confirmation
+  // Handle booking confirmation for both initial booking and rebooking
   const handleConfirmBookingAction = async () => {
     if (pendingBusId) {
-      await handleConfirmBooking(bookBus)
+      if (userBooking) {
+        // User is rebooking - change bus instead of creating new booking
+        try {
+          toast.loading('Changing your bus...')
+          const success = await changeBusWithConfirmation(pendingBusId, queuePosition)
+          
+          if (success) {
+            toast.success('Successfully changed bus!')
+            // Redirect to confirmation page after successful rebooking
+            router.push('/booking-confirmation')
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Failed to change bus'
+          toast.error(errorMessage)
+        }
+      } else {
+        // User is doing initial booking
+        await handleConfirmBooking(bookBus)
+      }
     }
   }
 
@@ -196,43 +178,6 @@ export default function BusesPage() {
 
         {/* Queue Status Banner */}
         <QueueStatusBanner queuePosition={queuePosition} />
-
-        {/* Rebooking Confirmation Dialog */}
-        {showRebookingConfirm && rebookingBusId && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-            <div className="flex items-start space-x-3">
-              <div className="flex-shrink-0">
-                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-medium text-blue-900 mb-2">
-                  Confirm Bus Change
-                </h3>
-                <p className="text-blue-700 mb-4">
-                  You&apos;re about to change from Bus {userBooking?.busId} to Bus {rebookingBusId}. 
-                  This will remove you from the queue and confirm your new bus selection.
-                </p>
-                <div className="flex space-x-3">
-                  <Button 
-                    onClick={handleRebookingConfirm}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    Confirm Change
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    onClick={handleRebookingCancel}
-                    className="border-blue-300 text-blue-700 hover:bg-blue-100"
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* User's Current Booking */}
         {userBooking && (

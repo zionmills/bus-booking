@@ -13,7 +13,8 @@ export function useBooking(
   currentUserName: string | null,
   queuePosition: number | null,
   canBookBus: boolean,
-  onBookingSuccess: () => void
+  onBookingSuccess: () => void,
+  userBooking: { busId: number; userName: string } | null
 ) {
   const [bookingState, setBookingState] = useState<BookingState>({
     showConfirmButton: false,
@@ -50,13 +51,17 @@ export function useBooking(
         pendingBusId: busId
       })
       
-      toast.info('Please confirm your bus selection')
+      if (userBooking) {
+        toast.info('Please confirm your bus change')
+      } else {
+        toast.info('Please confirm your bus selection')
+      }
       
     } catch (error) {
       console.error('Error in bus selection:', error)
       toast.error('Failed to select bus. Please try again.')
     }
-  }, [currentUserId, currentUserName, canBookBus, queuePosition])
+  }, [currentUserId, currentUserName, canBookBus, queuePosition, userBooking])
 
   const handleConfirmBooking = useCallback(async (bookBus: (busId: number) => Promise<{ bus_id: number | null; created_at: string; id: number; user_id: number | null }>) => {
     if (!bookingState.pendingBusId || !currentUserId) return

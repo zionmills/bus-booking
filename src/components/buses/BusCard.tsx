@@ -83,7 +83,7 @@ export function BusCard({
         <div className="space-y-2">
           <Button className="w-full" onClick={onConfirmBooking}>
             <CheckCircle className="w-4 h-4 mr-2" />
-            Confirm Booking
+            {userBooking ? 'Confirm Change' : 'Confirm Booking'}
           </Button>
           <Button className="w-full" variant="outline" onClick={onCancelSelection}>
             Cancel Selection
