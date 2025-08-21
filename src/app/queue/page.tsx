@@ -333,6 +333,21 @@ export default function QueuePage() {
                     <p className="text-sm text-green-600">
                       Position: <span className="font-bold">{queuePosition}</span>
                     </p>
+                    
+                    {/* Booking Button - Show when eligible to book */}
+                    {queuePosition && queuePosition <= 20 && (
+                      <div className="mt-3">
+                        <Link href="/buses">
+                          <Button className="w-full bg-green-600 hover:bg-green-700 text-white">
+                            Book Your Bus Now
+                          </Button>
+                        </Link>
+                        <p className="text-xs text-green-700 mt-1 text-center">
+                          You&apos;re in the booking zone! Click to select your bus.
+                        </p>
+                      </div>
+                    )}
+                    
                     {/* Personal timeout warning */}
                     {queuePosition && queuePosition <= 20 && queueSize > 0 && (() => {
                       const userTimeout = timeoutInfos.find(t => t.userId === currentUser?.id)
@@ -396,9 +411,26 @@ export default function QueuePage() {
               >
                 Refresh
               </Button>
-              
-
             </div>
+
+            {/* Booking Button - Show prominently when eligible */}
+            {isInQueue && queuePosition && queuePosition <= 20 && (
+              <div className="mt-4 p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border-2 border-green-200">
+                <div className="text-center">
+                  <h3 className="text-lg font-semibold text-green-800 mb-2">
+                    🚌 Ready to Book Your Bus!
+                  </h3>
+                  <p className="text-sm text-green-700 mb-3">
+                    You&apos;re in position {queuePosition} and can now book your bus.
+                  </p>
+                  <Link href="/buses">
+                    <Button size="lg" className="bg-green-600 hover:bg-green-700 text-white px-8">
+                      Go to Bus Booking
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
