@@ -37,7 +37,6 @@ export default function BusesPage() {
     loadPassengersForBus,
     bookBus,
     changeBusWithConfirmation,
-    cancelBooking,
     addPendingPassenger,
     clearPendingPassengers
   } = useBuses(currentUser?.id || null, currentUser?.name || null)

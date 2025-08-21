@@ -128,19 +128,13 @@ export function ScanningView({
                   <div className="text-center space-y-4">
                     <div className="p-4 bg-green-50 rounded-lg border border-green-200">
                       <p className="text-green-700 font-medium">✅ Your booking is confirmed!</p>
-                      <p className="text-sm text-green-600 mt-1">Bus {existingBooking.bus_id} • {new Date(existingBooking.created_at).toLocaleDateString()}</p>
+                      <p className="text-sm text-green-600 mt-1">Bus {existingBooking.bus_id} • {new Date(existingBooking.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                     </div>
-                    <div className="flex space-x-2">
-                      <Link href="/buses" className="flex-1">
+                    <div className="w-full">
+                      <Link href="/buses" className="w-full">
                         <Button className="w-full bg-green-600 hover:bg-green-700">
                           <Bus className="w-4 h-4 mr-2" />
                           View My Booking
-                        </Button>
-                      </Link>
-                      <Link href="/booking-confirmation" className="flex-1">
-                        <Button variant="outline" className="w-full">
-                          <Ticket className="w-4 h-4 mr-2" />
-                          Booking Details
                         </Button>
                       </Link>
                     </div>
