@@ -70,11 +70,6 @@ export default function BusesPage() {
     handleBookBus(busId)
   }
 
-  // Handle change bus action
-  const handleChangeBus = () => {
-    toast.info('Click on any other bus to change your selection')
-  }
-
   // Handle booking confirmation for both initial booking and rebooking
   const handleConfirmBookingAction = async () => {
     if (pendingBusId) {
@@ -183,7 +178,6 @@ export default function BusesPage() {
         {userBooking && (
           <UserBookingCard 
             userBooking={userBooking} 
-            onChangeBus={handleChangeBus} 
           />
         )}
 

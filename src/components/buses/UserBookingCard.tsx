@@ -1,13 +1,14 @@
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { CheckCircle, RefreshCw } from 'lucide-react'
+import { CheckCircle, Eye } from 'lucide-react'
+import Link from 'next/link'
 
 interface UserBookingCardProps {
   userBooking?: { busId: number; userName: string } | null
-  onChangeBus: () => void
+  onChangeBus?: () => void
 }
 
-export function UserBookingCard({ userBooking, onChangeBus }: UserBookingCardProps) {
+export function UserBookingCard({ userBooking }: UserBookingCardProps) {
   // Guard against null/undefined userBooking
   if (!userBooking) {
     return null
@@ -28,14 +29,15 @@ export function UserBookingCard({ userBooking, onChangeBus }: UserBookingCardPro
               </p>
             </div>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onChangeBus}
-          >
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Change Bus
-          </Button>
+          <Link href="/booking-confirmation">
+            <Button
+              variant="outline"
+              size="sm"
+            >
+              <Eye className="w-4 h-4 mr-2" />
+              View Existing Reservation
+            </Button>
+          </Link>
         </div>
       </CardContent>
     </Card>

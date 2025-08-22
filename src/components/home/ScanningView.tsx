@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { User, Users, Scan, Bus, Ticket } from 'lucide-react'
+import { User, Users, Scan, Bus } from 'lucide-react'
 import Link from 'next/link'
 import QRScanner from '@/components/QRScanner'
 import { QueueStatusBanner } from './QueueStatusBanner'
