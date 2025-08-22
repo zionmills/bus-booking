@@ -30,14 +30,24 @@ interface BookingWithDelegate {
   }
 }
 
+interface UnassignedDelegate {
+  id: number
+  name: string | null
+  qr_code: string | null
+  created_at: string
+}
+
 export default function ViewPassengersPage() {
   const [buses, setBuses] = useState<BusWithPassengers[]>([])
+  const [unassignedDelegates, setUnassignedDelegates] = useState<UnassignedDelegate[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [expandedBuses, setExpandedBuses] = useState<Set<number>>(new Set())
+  const [showUnassigned, setShowUnassigned] = useState(false)
 
   useEffect(() => {
     loadBusesWithPassengers()
+    loadUnassignedDelegates()
   }, [])
 
   const loadBusesWithPassengers = async () => {
@@ -86,6 +96,33 @@ export default function ViewPassengersPage() {
       setError(err instanceof Error ? err.message : 'Failed to load buses')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadUnassignedDelegates = async () => {
+    try {
+      // Get all delegates
+      const { data: allDelegates, error: delegatesError } = await supabase
+        .from('delegates')
+        .select('*')
+        .order('name')
+
+      if (delegatesError) throw delegatesError
+
+      // Get all delegates with bookings
+      const { data: bookedDelegates, error: bookingsError } = await supabase
+        .from('bookings')
+        .select('user_id')
+
+      if (bookingsError) throw bookingsError
+
+      // Filter out delegates who have bookings
+      const bookedIds = new Set(bookedDelegates.map(booking => booking.user_id))
+      const unassigned = allDelegates.filter(delegate => !bookedIds.has(delegate.id))
+
+      setUnassignedDelegates(unassigned)
+    } catch (err) {
+      console.error('Failed to load unassigned delegates:', err)
     }
   }
 
@@ -195,6 +232,92 @@ export default function ViewPassengersPage() {
     window.URL.revokeObjectURL(url)
   }
 
+  const downloadUnassignedList = () => {
+    const csvContent = [
+      ['#', 'Name', 'QR Code', 'Registration Time'],
+      ...unassignedDelegates.map((delegate, index) => [
+        (index + 1).toString(),
+        delegate.name || 'Unknown',
+        delegate.qr_code || 'N/A',
+        new Date(delegate.created_at).toLocaleString()
+      ])
+    ].map(row => row.join(',')).join('\n')
+
+    const blob = new Blob([csvContent], { type: 'text/csv' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `unassigned-delegates-${new Date().toISOString().split('T')[0]}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+  }
+
+  const printUnassignedList = () => {
+    const printWindow = window.open('', '_blank')
+    if (!printWindow) return
+
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Unassigned Delegates List</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .header { text-align: center; margin-bottom: 30px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #f2f2f2; }
+            .no-delegates { text-align: center; color: #666; padding: 20px; }
+            @media print { .no-print { display: none; } }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Unassigned Delegates List</h1>
+            <p>Generated on: ${new Date().toLocaleString()}</p>
+            <p>Total Unassigned: ${unassignedDelegates.length}</p>
+          </div>
+          
+          <div class="delegates-list">
+            <h3>Delegates Without Bus Bookings</h3>
+            ${unassignedDelegates.length > 0 ? `
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Name</th>
+                    <th>QR Code</th>
+                    <th>Registration Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${unassignedDelegates.map((delegate, index) => `
+                    <tr>
+                      <td>${index + 1}</td>
+                      <td>${delegate.name || 'Unknown'}</td>
+                      <td>${delegate.qr_code || 'N/A'}</td>
+                      <td>${new Date(delegate.created_at).toLocaleString()}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            ` : '<div class="no-delegates">All delegates have been assigned to buses</div>'}
+          </div>
+          
+          <div class="no-print" style="margin-top: 30px; text-align: center;">
+            <button onclick="window.print()">Print</button>
+            <button onclick="window.close()">Close</button>
+          </div>
+        </body>
+      </html>
+    `
+
+    printWindow.document.write(printContent)
+    printWindow.document.close()
+  }
+
   if (loading) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -241,14 +364,86 @@ export default function ViewPassengersPage() {
       <div className="text-center mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Bus Passenger View</h1>
         <p className="text-gray-600">View all buses and their current passengers</p>
-        <Button 
-          onClick={loadBusesWithPassengers} 
-          className="mt-4"
-          variant="outline"
-        >
-          Refresh Data
-        </Button>
+        <div className="flex justify-center space-x-4 mt-4">
+          <Button 
+            onClick={loadBusesWithPassengers} 
+            variant="outline"
+          >
+            Refresh Data
+          </Button>
+          <Button 
+            onClick={() => setShowUnassigned(!showUnassigned)} 
+            variant={showUnassigned ? "default" : "outline"}
+          >
+            {showUnassigned ? 'Hide' : 'Show'} Unassigned Delegates ({unassignedDelegates.length})
+          </Button>
+        </div>
       </div>
+
+      {/* Unassigned Delegates Section */}
+      {showUnassigned && (
+        <div className="mb-8">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Users className="w-5 h-5 text-orange-600" />
+                  <span>Unassigned Delegates ({unassignedDelegates.length})</span>
+                </div>
+                <div className="flex space-x-2">
+                  <Button
+                    onClick={printUnassignedList}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <Printer className="w-4 h-4 mr-2" />
+                    Print
+                  </Button>
+                  <Button
+                    onClick={downloadUnassignedList}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    CSV
+                  </Button>
+                </div>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {unassignedDelegates.length > 0 ? (
+                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                  {unassignedDelegates.map((delegate, index) => (
+                    <div 
+                      key={delegate.id} 
+                      className="p-3 bg-orange-50 border border-orange-200 rounded-lg"
+                    >
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="font-medium text-sm">
+                            {index + 1}. {delegate.name || 'Unknown Name'}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            QR: {delegate.qr_code || 'N/A'}
+                          </p>
+                        </div>
+                        <span className="text-xs text-gray-400">
+                          {new Date(delegate.created_at).toLocaleTimeString()}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <Users className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <p>All delegates have been assigned to buses!</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {buses.map((bus) => {
