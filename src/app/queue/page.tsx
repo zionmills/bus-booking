@@ -105,12 +105,12 @@ export default function QueuePage() {
     // Load queue data
     loadQueueData()
     
-    // Set up periodic refresh for timeout info only when user is in queue
-    const timeoutInterval = setInterval(() => {
-      if (isInQueue && queuePosition !== null && queueSize > 0) {
-        updateTimeoutInfo()
-      }
-    }, 1000) // Update every second for countdown
+      // Set up periodic refresh for timeout info only when user is in queue
+  const timeoutInterval = setInterval(() => {
+    if (isInQueue && queuePosition !== null && queueSize > 0) {
+      updateTimeoutInfo()
+    }
+  }, 5000) // Update every 5 seconds since server handles the countdown
 
     // Cleanup function
     return () => {

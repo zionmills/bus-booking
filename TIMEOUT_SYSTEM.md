@@ -1,19 +1,19 @@
-# Queue Timeout System
+# Queue Timeout System (Server-Side)
 
 ## Overview
 
-The bus booking system now includes an automatic timeout mechanism that ensures users in the booking zone (positions 1-20) complete their bookings within a reasonable time frame.
+The bus booking system now includes a **server-side** automatic timeout mechanism that ensures users in the booking zone (positions 1-20) complete their bookings within a reasonable time frame. This system works even if users close their browsers.
 
 ## How It Works
 
 ### Timeout Duration
 - **Booking Zone**: Positions 1-20
-- **Timeout**: 5 minutes (300 seconds)
-- **Check Frequency**: Every 10 seconds
+- **Timeout**: 5 minutes (300 seconds) from when they enter the booking zone
+- **Check Frequency**: Every minute (server-side cron job)
 
 ### Automatic Removal
 When a user has been in positions 1-20 for more than 5 minutes:
-1. The system automatically detects the timeout
+1. The server automatically detects the timeout
 2. The user is removed from the queue
 3. All subsequent positions are automatically reordered
 4. The next user in line moves into the booking zone
@@ -29,27 +29,31 @@ When a user has been in positions 1-20 for more than 5 minutes:
 
 ## Technical Implementation
 
+### Database Functions
+- `queue_cron_job()`: Main cron job function that handles both updating timeouts and cleanup
+- `update_booking_zone_timeouts()`: Sets timeout_at for users entering the booking zone
+- `cleanup_expired_queue_entries()`: Removes expired users and reorders positions
+- `get_queue_timeout_info()`: Returns timeout information for all users in booking zone
+
 ### Queue Manager (`src/lib/queue-manager.ts`)
-- `startTimeoutMonitoring()`: Starts the automatic timeout checking
-- `stopTimeoutMonitoring()`: Stops the monitoring system
-- `checkAndRemoveTimeouts()`: Private method that removes timed-out users
-- `getUserTimeoutInfo()`: Gets timeout information for a specific user
-- `getBookingZoneTimeoutInfo()`: Gets timeout information for all users in positions 1-20
+- `getBookingZoneTimeoutInfo()`: Gets server-side timeout information from database
+- Fallback to client-side calculation if database function fails
 
 ### Queue Page (`src/app/queue/page.tsx`)
-- Integrates with the timeout monitoring system
+- Integrates with the server-side timeout system
 - Shows countdown timers for each user in the booking zone
 - Displays timeout warnings and personal countdowns
-- Automatically refreshes timeout information every second
+- Automatically refreshes timeout information every 5 seconds
 
 
 
 ## Database Operations
 
 The timeout system performs these database operations:
-1. **Query**: Find users in positions 1-20 who joined before the timeout threshold
-2. **Remove**: Delete timed-out users from the queue
-3. **Reorder**: Automatically adjust positions for remaining users
+1. **Update**: Set `timeout_at` timestamp for users entering positions 1-20
+2. **Query**: Find users whose `timeout_at` has passed
+3. **Remove**: Delete timed-out users from the queue
+4. **Reorder**: Automatically adjust positions for remaining users
 
 ## Benefits
 
@@ -61,17 +65,19 @@ The timeout system performs these database operations:
 
 ## Configuration
 
-The timeout system can be easily configured by modifying these constants in `QueueManager`:
-- `BOOKING_TIMEOUT_MS`: Timeout duration in milliseconds (default: 300,000ms = 5 minutes)
-- `BOOKING_ZONE_SIZE`: Number of positions in the booking zone (default: 20)
-- Check interval: Currently set to 10 seconds (can be adjusted in `startTimeoutMonitoring`)
+The timeout system can be easily configured by modifying these settings:
+- **Timeout Duration**: 5 minutes (300 seconds) - set in the `queue_cron_job()` function
+- **Booking Zone Size**: 20 positions - set in the database functions
+- **Check Frequency**: Every minute - configured in Supabase cron job settings
+- **Client Refresh**: Every 5 seconds - set in the queue page component
 
 ## Monitoring and Logging
 
-The system logs timeout activities:
-- Console logs when users are removed due to timeout
-- Error logging for any issues during timeout processing
-- Real-time updates in the UI
+The system provides comprehensive monitoring:
+- **Database Logs**: Function execution results and error handling
+- **Cron Job History**: Execution history and performance metrics
+- **Real-time Updates**: Live countdown timers in the UI
+- **Error Handling**: Graceful fallback to client-side calculations if needed
 
 ## Future Enhancements
 

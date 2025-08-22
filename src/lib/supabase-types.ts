@@ -123,18 +123,21 @@ export type Database = {
           joined_at: string
           position: number | null
           user_id: number | null
+          timeout_at: string | null
         }
         Insert: {
           id?: number
           joined_at?: string
           position?: number | null
           user_id?: number | null
+          timeout_at?: string | null
         }
         Update: {
           id?: number
           joined_at?: string
           position?: number | null
           user_id?: number | null
+          timeout_at?: string | null
         }
         Relationships: [
           {
@@ -166,6 +169,43 @@ export type Database = {
       remove_user_from_queue: {
         Args: { user_id_param: number }
         Returns: boolean
+      }
+      update_booking_zone_timeouts: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
+      cleanup_expired_queue_entries: {
+        Args: Record<PropertyKey, never>
+        Returns: number
+      }
+      get_queue_timeout_info: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          user_id: number
+          "position": number
+          timeout_at: string | null
+          time_remaining_ms: number
+        }[]
+      }
+      queue_cron_job: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          success: boolean
+          timestamp: string
+          updated_timeouts: number
+          deleted_expired: number
+          message: string
+        }
+      }
+      trigger_queue_cleanup: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          success: boolean
+          timestamp: string
+          updated_timeouts: number
+          deleted_expired: number
+          message: string
+        }
       }
     }
     Enums: {

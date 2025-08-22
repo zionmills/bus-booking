@@ -5,6 +5,7 @@ export interface QueueEntry {
   user_id: number
   position: number
   joined_at: string
+  timeout_at?: string | null
 }
 
 export interface QueueUser {
@@ -19,6 +20,7 @@ export interface TimeoutInfo {
   position: number
   timeRemaining: number
   isInBookingZone: boolean
+  timeoutAt?: string | null
 }
 
 /**
@@ -138,6 +140,37 @@ export class QueueManager {
    */
   static async getBookingZoneTimeoutInfo(): Promise<TimeoutInfo[]> {
     try {
+      // Use the new database function to get server-side timeout info
+      const { data: timeoutData, error } = await supabase.rpc('get_queue_timeout_info')
+
+      if (error) throw error
+
+      if (!timeoutData || !Array.isArray(timeoutData)) {
+        return this.getBookingZoneTimeoutInfoFallback()
+      }
+
+      return timeoutData
+        .filter(entry => entry.user_id !== null && entry["position"] !== null)
+        .map(entry => ({
+          userId: entry.user_id!,
+          position: entry["position"]!,
+          timeRemaining: Math.max(0, entry.time_remaining_ms || 0),
+          isInBookingZone: true,
+          timeoutAt: entry.timeout_at
+        }))
+    } catch (error) {
+      console.error('Error getting booking zone timeout info:', error)
+      // Fallback to old method if RPC fails
+      return this.getBookingZoneTimeoutInfoFallback()
+    }
+  }
+
+  /**
+   * Fallback method for getting timeout info (old implementation)
+   * @returns Array of timeout information for users in booking zone
+   */
+  private static async getBookingZoneTimeoutInfoFallback(): Promise<TimeoutInfo[]> {
+    try {
       const { data: entries, error } = await supabase
         .from('queue')
         .select('user_id, position, joined_at')
@@ -161,7 +194,7 @@ export class QueueManager {
           }
         })
     } catch (error) {
-      console.error('Error getting booking zone timeout info:', error)
+      console.error('Error in fallback timeout info method:', error)
       return []
     }
   }
