@@ -93,11 +93,11 @@ export function BookingEligibilitySummary({
             </div>
             {/* Join Queue Button - only show when not in queue */}
             {statusInfo.showJoinButton && (
-              <Link href="/queue">
-                <Button size="sm" className="bg-blue-600 hover:bg-blue-700">
+              <Button asChild size="sm" className="bg-blue-600 hover:bg-blue-700">
+                <Link href="/queue">
                   Join Queue
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             )}
           </div>
         </div>
