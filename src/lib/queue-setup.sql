@@ -74,10 +74,10 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION update_booking_zone_timeouts()
 RETURNS VOID AS $$
 BEGIN
-  -- Set timeout_at to 5 minutes from now for users in positions 1-20
+  -- Set timeout_at to 2 minutes from now for users in positions 1-20
   -- Only update if timeout_at is NULL (first time entering booking zone)
   UPDATE queue 
-  SET timeout_at = NOW() + INTERVAL '5 minutes'
+  SET timeout_at = NOW() + INTERVAL '2 minutes'
   WHERE position <= 20 
     AND timeout_at IS NULL;
 END;
@@ -145,7 +145,7 @@ DECLARE
 BEGIN
   -- First, update timeouts for users who just entered the booking zone
   UPDATE queue 
-  SET timeout_at = NOW() + INTERVAL '5 minutes'
+  SET timeout_at = NOW() + INTERVAL '2 minutes'
   WHERE position <= 20 
     AND timeout_at IS NULL;
   

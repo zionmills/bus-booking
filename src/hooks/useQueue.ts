@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { QueueManager, TimeoutInfo } from '@/lib/queue-manager'
+import { QUEUE_CONFIG } from '@/lib/queue-config'
 import { toast } from 'sonner'
 
 export function useQueue(currentUserId: number | null) {
@@ -89,8 +90,8 @@ export function useQueue(currentUserId: number | null) {
     // Update immediately
     updateTimeoutInfo()
 
-    // Update every second for countdown
-    const interval = setInterval(updateTimeoutInfo, 1000)
+    // Update every 30 seconds instead of every second to reduce backend load
+    const interval = setInterval(updateTimeoutInfo, QUEUE_CONFIG.TIMEOUT_UPDATE_INTERVAL_MS)
 
     return () => clearInterval(interval)
   }, [currentUserId, queuePosition])

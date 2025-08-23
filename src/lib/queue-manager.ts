@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { QUEUE_CONFIG } from './queue-config'
 
 export interface QueueEntry {
   id: number
@@ -28,8 +29,8 @@ export interface TimeoutInfo {
  */
 export class QueueManager {
   private static timeoutCheckInterval: NodeJS.Timeout | null = null
-  private static readonly BOOKING_TIMEOUT_MS = 300 * 1000 // 300 seconds (5 minutes)
-  private static readonly BOOKING_ZONE_SIZE = 20
+  private static readonly BOOKING_TIMEOUT_MS = QUEUE_CONFIG.BOOKING_TIMEOUT_MS
+  private static readonly BOOKING_ZONE_SIZE = QUEUE_CONFIG.BOOKING_ZONE_SIZE
 
   /**
    * Start the timeout monitoring system
@@ -39,14 +40,14 @@ export class QueueManager {
       return // Already running
     }
 
-    // Check every 10 seconds for timeouts
+    // Check every 30 seconds for timeouts instead of 10 seconds to reduce backend load
     this.timeoutCheckInterval = setInterval(async () => {
       try {
         await this.checkAndRemoveTimeouts()
       } catch (error) {
         console.error('Error in timeout monitoring:', error)
       }
-    }, 10000)
+    }, QUEUE_CONFIG.TIMEOUT_MONITORING_INTERVAL_MS)
   }
 
   /**

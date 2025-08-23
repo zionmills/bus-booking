@@ -1,16 +1,18 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { Users, Clock, ArrowLeft, CheckCircle, AlertCircle, Timer } from 'lucide-react'
+import { Users, Clock, ArrowLeft, CheckCircle, AlertCircle, Timer, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from 'next/link'
 
 import { useUser } from '@/contexts/UserContext'
 import { QueueManager, TimeoutInfo } from '@/lib/queue-manager'
+import { useRateLimitedQueue } from '@/hooks/useRateLimitedQueue'
+import { QUEUE_CONFIG } from '@/lib/queue-config'
 
 interface QueueEntry {
   id: number
@@ -22,108 +24,44 @@ interface QueueEntry {
 
 export default function QueuePage() {
   const { currentUser, queuePosition, setQueuePosition } = useUser()
-  const [queueEntries, setQueueEntries] = useState<QueueEntry[]>([])
   const [isInQueue, setIsInQueue] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [queueSize, setQueueSize] = useState(0)
-  const [timeoutInfos, setTimeoutInfos] = useState<TimeoutInfo[]>([])
-  // Removed queue size limit - queue can now grow indefinitely
 
   // Check if user is in queue based on context
   useEffect(() => {
-    const wasInQueue = isInQueue
     setIsInQueue(queuePosition !== null)
-    
-    // If user just left the queue, clear timeout info
-    if (wasInQueue && queuePosition === null) {
-      setTimeoutInfos([])
-    }
-  }, [queuePosition, isInQueue])
+  }, [queuePosition])
 
-
-
-  const loadQueueData = useCallback(async () => {
-    setLoading(true)
-    
-    try {
-      // Load queue entries using QueueManager
-      const queueData = await QueueManager.getCurrentQueue()
-      const queueSize = await QueueManager.getQueueSize()
-      
-      const formattedQueue: QueueEntry[] = queueData.map((entry) => ({
-        id: entry.id,
-        position: entry.position,
-        userName: entry.name,
-        joinedAt: new Date(entry.joined_at).toLocaleTimeString()
-      }))
-      
-      setQueueEntries(formattedQueue)
-      setQueueSize(queueSize)
-      
-             // Clear timeout info if user is not in queue
-       if (!isInQueue || queuePosition === null) {
-         setTimeoutInfos([])
-       }
-      
-    } catch (error) {
-      console.error('Error loading queue:', error)
-      toast.error('Failed to load queue data')
-    } finally {
-      setLoading(false)
-    }
-  }, [isInQueue, queuePosition])
-
-  const updateTimeoutInfo = useCallback(async () => {
-    try {
-      // Only update timeout info if there are actually people in the queue
-      if (queueSize === 0) {
-        setTimeoutInfos([])
-        return
-      }
-      
-      const timeoutData = await QueueManager.getBookingZoneTimeoutInfo()
-      setTimeoutInfos(timeoutData)
-      
-      // Update queue entries with timeout info
-      setQueueEntries(prev => prev.map(entry => {
-        const timeoutInfo = timeoutData.find(t => t.userId === entry.id)
-        return {
-          ...entry,
-          timeoutInfo
-        }
-      }))
-    } catch (error) {
-      console.error('Error updating timeout info:', error)
-    }
-  }, [queueSize])
-
-  // Add useEffect hook after function declarations
-  useEffect(() => {
-    // Start timeout monitoring when component mounts
-    QueueManager.startTimeoutMonitoring()
-    
-    // Load queue data
-    loadQueueData()
-    
-      // Set up periodic refresh for timeout info only when user is in queue
-  const timeoutInterval = setInterval(() => {
-    if (isInQueue && queuePosition !== null && queueSize > 0) {
-      updateTimeoutInfo()
-    }
-  }, 5000) // Update every 5 seconds since server handles the countdown
-
-    // Cleanup function
-    return () => {
-      clearInterval(timeoutInterval)
-      QueueManager.stopTimeoutMonitoring()
-    }
-  }, [isInQueue, queuePosition, queueSize, loadQueueData, updateTimeoutInfo])
+  // Use the rate-limited queue hook
+  const {
+    queueEntries,
+    queueSize,
+    timeoutInfos,
+    loading: queueLoading,
+    lastRefresh,
+    forceRefresh,
+    canRefresh,
+    getTimeUntilNextRefresh
+  } = useRateLimitedQueue(isInQueue, queuePosition, QUEUE_CONFIG.REFRESH_INTERVAL_MS)
 
   const formatTimeRemaining = (milliseconds: number): string => {
     const seconds = Math.ceil(milliseconds / 1000)
     const minutes = Math.floor(seconds / 60)
     const remainingSeconds = seconds % 60
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+  }
+
+  const formatTimeUntilNextRefresh = (): string => {
+    const timeMs = getTimeUntilNextRefresh()
+    if (timeMs === 0) return 'Ready to refresh'
+    
+    const minutes = Math.floor(timeMs / 60000)
+    const seconds = Math.floor((timeMs % 60000) / 1000)
+    
+    if (minutes > 0) {
+      return `${minutes}m ${seconds}s until next refresh`
+    }
+    return `${seconds}s until next refresh`
   }
 
   const getTimeoutWarningColor = (timeRemaining: number): string => {
@@ -141,23 +79,14 @@ export default function QueuePage() {
         return
       }
       
-      // Queue size limit removed - users can always join
-      
       // Add user to queue using QueueManager
       const newPosition = await QueueManager.addUserToQueue(currentUser.id)
       
-      // Update local state
-      const newEntry: QueueEntry = {
-        id: currentUser.id, // Using user ID as temporary ID
-        position: newPosition,
-        userName: 'You',
-        joinedAt: new Date().toLocaleTimeString()
-      }
-      
-      setQueueEntries(prev => [...prev, newEntry])
-      setQueueSize(prev => prev + 1)
       setQueuePosition(newPosition)
       setIsInQueue(true)
+      
+      // Force refresh queue data after joining
+      forceRefresh()
       
       toast.success(`Joined queue at position ${newPosition}`)
       
@@ -178,8 +107,8 @@ export default function QueuePage() {
       // Remove user from queue using QueueManager
       await QueueManager.removeUserFromQueue(currentUser.id)
       
-      // Refresh queue data to get updated positions
-      await loadQueueData()
+      // Force refresh queue data after leaving
+      forceRefresh()
       
       // Update local state
       setQueuePosition(null)
@@ -207,7 +136,7 @@ export default function QueuePage() {
     }
   }
 
-  if (loading && queueEntries.length === 0) {
+  if (queueLoading && queueEntries.length === 0) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
         <div className="max-w-2xl mx-auto pt-20">
@@ -236,6 +165,25 @@ export default function QueuePage() {
             </Button>
           </Link>
         </div>
+
+        {/* Refresh Status Banner */}
+        <Card className="mb-6 border-blue-200 bg-blue-50">
+          <CardContent className="pt-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <RefreshCw className="w-4 h-4 text-blue-600" />
+                <span className="text-sm text-blue-800">
+                  {formatTimeUntilNextRefresh()}
+                </span>
+              </div>
+              <div className="text-xs text-blue-600">
+                {lastRefresh && (
+                  <span>Last updated: {lastRefresh.toLocaleTimeString()}</span>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Queue Status Card */}
         <Card className="mb-8">
@@ -288,7 +236,7 @@ export default function QueuePage() {
                       Booking Timeout Warning
                     </p>
                     <p className="text-sm text-yellow-600">
-                                             Users in positions 1-20 have 5 minutes to book. After that, they&apos;ll be removed from the queue.
+                      Users in positions 1-20 have 5 minutes to book. After that, they&apos;ll be removed from the queue.
                     </p>
                     <div className="mt-2 space-y-1">
                       {timeoutInfos.slice(0, 3).map((timeout) => (
@@ -393,11 +341,13 @@ export default function QueuePage() {
               )}
               
               <Button 
-                onClick={loadQueueData} 
+                onClick={forceRefresh} 
                 variant="outline"
-                disabled={loading}
+                disabled={!canRefresh() || queueLoading}
+                className="flex items-center space-x-2"
               >
-                Refresh
+                <RefreshCw className={`w-4 h-4 ${!canRefresh() ? 'opacity-50' : ''}`} />
+                <span>Refresh</span>
               </Button>
             </div>
 
@@ -422,16 +372,16 @@ export default function QueuePage() {
           </CardContent>
         </Card>
 
-                {/* Current Queue */}
+        {/* Current Queue */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
               <Clock className="w-5 h-5 mr-2 text-gray-600" />
               Current Queue ({queueEntries.length} people)
             </CardTitle>
-                         <CardDescription>
-               Only positions 1-20 can book buses. Positions 21+ must wait their turn. Users in the booking zone have 5 minutes to complete their booking.
-             </CardDescription>
+            <CardDescription>
+              Only positions 1-20 can book buses. Positions 21+ must wait their turn. Users in the booking zone have 5 minutes to complete their booking.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {queueEntries.length === 0 ? (
