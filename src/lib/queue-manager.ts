@@ -460,10 +460,13 @@ export class QueueManager {
 
   /**
    * Check if queue is full
-   * @param maxSize - Maximum queue size (default: 40)
-   * @returns True if queue is full
+   * @param maxSize - Maximum queue size (optional, no default limit)
+   * @returns True if queue is full (only if maxSize is specified)
    */
-  static async isQueueFull(maxSize: number = 40): Promise<boolean> {
+  static async isQueueFull(maxSize?: number): Promise<boolean> {
+    if (maxSize === undefined) {
+      return false // No limit set, queue is never full
+    }
     const currentSize = await this.getQueueSize()
     return currentSize >= maxSize
   }

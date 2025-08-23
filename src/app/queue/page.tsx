@@ -27,7 +27,7 @@ export default function QueuePage() {
   const [loading, setLoading] = useState(false)
   const [queueSize, setQueueSize] = useState(0)
   const [timeoutInfos, setTimeoutInfos] = useState<TimeoutInfo[]>([])
-  const maxQueueSize = 40
+  // Removed queue size limit - queue can now grow indefinitely
 
   // Check if user is in queue based on context
   useEffect(() => {
@@ -141,12 +141,7 @@ export default function QueuePage() {
         return
       }
       
-      // Check if queue is full
-      const isFull = await QueueManager.isQueueFull(maxQueueSize)
-      if (isFull) {
-        toast.error('Queue is full. Please try again later.')
-        return
-      }
+      // Queue size limit removed - users can always join
       
       // Add user to queue using QueueManager
       const newPosition = await QueueManager.addUserToQueue(currentUser.id)
@@ -201,21 +196,14 @@ export default function QueuePage() {
   }
 
   const getQueueStatus = () => {
-    const percentage = (queueSize / maxQueueSize) * 100
-    
-    if (percentage >= 100) return { status: 'full', color: 'destructive' }
-    if (percentage >= 80) return { status: 'almost-full', color: 'warning' }
-    if (percentage >= 50) return { status: 'moderate', color: 'default' }
+    // Queue size limit removed - always show as available
     return { status: 'available', color: 'secondary' }
   }
 
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'full': return 'Queue Full'
-      case 'almost-full': return 'Almost Full'
-      case 'moderate': return 'Moderate'
       case 'available': return 'Available'
-      default: return 'Unknown'
+      default: return 'Available'
     }
   }
 
@@ -266,10 +254,10 @@ export default function QueuePage() {
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Current Queue Size</span>
-                <span className="font-medium">{queueSize}/{maxQueueSize}</span>
+                <span className="font-medium">{queueSize} people</span>
               </div>
               <Progress 
-                value={(queueSize / maxQueueSize) * 100} 
+                value={Math.min((queueSize / 100) * 100, 100)} 
                 className="h-2"
               />
             </div>
@@ -388,7 +376,7 @@ export default function QueuePage() {
               {!isInQueue ? (
                 <Button 
                   onClick={joinQueue} 
-                  disabled={loading || queueSize >= maxQueueSize}
+                  disabled={loading}
                   className="flex-1"
                 >
                   {loading ? 'Joining...' : 'Join Queue'}
